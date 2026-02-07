@@ -6,14 +6,14 @@ const AddProduct = () => {
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
 
-  // Dynamic lists that can be expanded by the user
+  // Dynamic lists
   const [itemTypes, setItemTypes] = useState(['RING', 'CHAIN', 'NECKLACE', 'BANGLES', 'EARRINGS', 'BRACELET', 'HARAM', 'PENDANT']);
   const [commonNames, setCommonNames] = useState(['Bridal Haram', 'Singapore Chain', 'Stone Ring', 'Plain Bangles', 'Temple Necklace']);
 
   const defaultRow = {
     barcode: '', 
-    image_preview: null,
-    image_file: null, 
+    image_files: [], // Stores File objects
+    image_previews: [], // Stores URL strings
     name: '',
     item_type: 'RING',
     metal_type: '22K_GOLD',
@@ -30,6 +30,7 @@ const AddProduct = () => {
 
   const [rows, setRows] = useState([defaultRow]);
 
+  // --- HELPER FUNCTIONS ---
   const handleAddNewType = () => {
     const newType = prompt("Enter new Item Type (e.g., ANKLET):");
     if (newType && !itemTypes.includes(newType.toUpperCase())) {
@@ -53,16 +54,18 @@ const AddProduct = () => {
   };
 
   const addRow = () => setRows([...rows, defaultRow]);
-
+  
   const removeRow = (index) => {
     if (rows.length > 1) setRows(rows.filter((_, i) => i !== index));
   };
 
-  const handleImageUpload = (index, file) => {
-    if (file) {
+  // --- IMAGE HANDLING ---
+  const handleImageUpload = (index, files) => {
+    if (files && files.length > 0) {
       const updatedRows = [...rows];
-      updatedRows[index].image_file = file;
-      updatedRows[index].image_preview = URL.createObjectURL(file);
+      const fileArray = Array.from(files);
+      updatedRows[index].image_files = fileArray;
+      updatedRows[index].image_previews = fileArray.map(file => URL.createObjectURL(file));
       setRows(updatedRows);
     }
   };
@@ -80,10 +83,10 @@ const AddProduct = () => {
     if (['name', 'metal_type', 'gross_weight', 'item_type'].includes(field)) {
       updatedRows[index].barcode = generateBarcode(updatedRows[index]);
     }
-
     setRows(updatedRows);
   };
 
+  // --- SUBMIT ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -103,8 +106,11 @@ const AddProduct = () => {
         formData.append('wastage_pct', row.wastage_pct);
         formData.append('description', `${row.item_type} - Premium jewelry piece.`);
         
-        if (row.image_file) {
-          formData.append('image', row.image_file);
+        // Append Multiple Images
+        if (row.image_files && row.image_files.length > 0) {
+            row.image_files.forEach(file => {
+                formData.append('images', file);
+            });
         }
 
         return axios.post('http://localhost:5000/api/products', formData, {
@@ -113,11 +119,11 @@ const AddProduct = () => {
       });
 
       await Promise.all(promises);
-      alert(`${rows.length} Product(s) successfully added! ✅`);
+      alert(`${rows.length} Product(s) saved! ✅`);
       navigate('/products');
     } catch (err) {
       console.error(err);
-      alert('Error adding products. Check console.');
+      alert('Error saving products. Check console.');
     } finally {
       setSaving(false);
     }
@@ -128,11 +134,11 @@ const AddProduct = () => {
       <div className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Batch Stock Entry</h1>
-          <p className="text-gray-500 text-sm">Add custom types and names on the fly.</p>
+          <p className="text-gray-500 text-sm">Multi-image support enabled.</p>
         </div>
         <div className="flex gap-2">
-            <button type="button" onClick={handleAddNewType} className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-xs font-bold border border-blue-200 hover:bg-blue-100">+ New Type</button>
-            <button type="button" onClick={handleAddNewName} className="bg-green-50 text-green-700 px-3 py-2 rounded text-xs font-bold border border-green-200 hover:bg-green-100">+ New Name</button>
+            <button type="button" onClick={handleAddNewType} className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-xs font-bold border border-blue-200">+ New Type</button>
+            <button type="button" onClick={handleAddNewName} className="bg-green-50 text-green-700 px-3 py-2 rounded text-xs font-bold border border-green-200">+ New Name</button>
             <button type="button" onClick={addRow} className="bg-gray-800 text-white px-4 py-2 rounded font-bold hover:bg-black transition">+ Add Row</button>
         </div>
       </div>
@@ -142,51 +148,45 @@ const AddProduct = () => {
           <table className="w-full text-left border-collapse min-w-[1400px]">
             <thead>
               <tr className="bg-gray-100 border-b">
-                <th className="p-3 text-sm font-bold text-gray-700">Photo</th>
-                <th className="p-3 text-sm font-bold text-gray-700">Type</th>
-                <th className="p-3 text-sm font-bold text-gray-700">Name</th>
+                <th className="p-3 text-sm font-bold text-gray-700 w-64">Photos (Select Multiple)</th>
+                <th className="p-3 text-sm font-bold text-gray-700">Type / Name</th>
                 <th className="p-3 text-sm font-bold text-gray-700">Auto-Barcode</th>
                 <th className="p-3 text-sm">Metal</th>
-                <th className="p-3 text-sm">Gross Wt</th>
-                <th className="p-3 text-sm bg-yellow-50 text-yellow-800">Touch %</th>
-                <th className="p-3 text-sm bg-blue-50 text-blue-800">Wastage %</th>
-                <th className="p-3 text-sm bg-blue-50 text-blue-800">Retail MC ₹</th>
+                <th className="p-3 text-sm">Weights (g)</th>
+                <th className="p-3 text-sm bg-blue-50 text-blue-800">Pricing</th>
                 <th className="p-3 text-sm">Qty</th>
                 <th className="p-3"></th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => (
-                <tr key={index} className="border-b hover:bg-gray-50">
-                  <td className="p-2 w-20">
-                    <label className="cursor-pointer">
-                      {row.image_preview ? (
-                        <img src={row.image_preview} alt="preview" className="w-12 h-12 object-cover rounded border" />
-                      ) : (
-                        <div className="w-12 h-12 bg-gray-200 border-2 border-dashed border-gray-400 rounded flex items-center justify-center text-xs text-gray-500 hover:bg-gray-300">
-                          + Pic
-                        </div>
-                      )}
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(index, e.target.files[0])} />
+                <tr key={index} className="border-b hover:bg-gray-50 align-top">
+                  <td className="p-2">
+                    <label className="cursor-pointer block mb-2">
+                      <div className="bg-gray-100 border-dashed border-2 border-gray-300 rounded p-3 text-center text-xs hover:bg-gray-200 text-gray-500">
+                         {row.image_files.length > 0 ? `${row.image_files.length} Files` : '📸 Upload Photos'}
+                      </div>
+                      <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleImageUpload(index, e.target.files)} />
                     </label>
+                    <div className="flex gap-1 overflow-x-auto">
+                        {row.image_previews.map((src, i) => (
+                            <img key={i} src={src} className="w-12 h-12 object-cover rounded border" alt="preview" />
+                        ))}
+                    </div>
                   </td>
 
-                  <td className="p-2">
-                    <select value={row.item_type} onChange={(e) => handleChange(index, 'item_type', e.target.value)} className="w-full p-2 border rounded text-sm bg-white">
+                  <td className="p-2 space-y-2">
+                    <select value={row.item_type} onChange={(e) => handleChange(index, 'item_type', e.target.value)} className="w-full p-2 border rounded text-xs font-bold bg-white">
                       {itemTypes.map(type => <option key={type} value={type}>{type}</option>)}
                     </select>
-                  </td>
-
-                  <td className="p-2">
                     <input 
-                      list="item-names" 
-                      required 
-                      placeholder="Select or type..." 
+                      list={`names-${index}`} 
+                      placeholder="Name..." 
                       value={row.name} 
                       onChange={(e) => handleChange(index, 'name', e.target.value)} 
                       className="w-full p-2 border rounded text-sm" 
                     />
-                    <datalist id="item-names">
+                    <datalist id={`names-${index}`}>
                       {commonNames.map(name => <option key={name} value={name} />)}
                     </datalist>
                   </td>
@@ -194,18 +194,25 @@ const AddProduct = () => {
                   <td className="p-2"><input readOnly value={row.barcode} className="w-full p-2 bg-gray-200 border rounded text-xs font-mono font-bold" /></td>
                   
                   <td className="p-2">
-                    <select value={row.metal_type} onChange={(e) => handleChange(index, 'metal_type', e.target.value)} className="w-full p-2 border rounded text-sm">
-                      <option value="22K_GOLD">22K Gold</option>
+                    <select value={row.metal_type} onChange={(e) => handleChange(index, 'metal_type', e.target.value)} className="w-full p-2 border rounded text-xs">
+                      <option value="22K_GOLD">22K</option>
                       <option value="SILVER">Silver</option>
                     </select>
                   </td>
                   
-                  <td className="p-2"><input type="number" step="0.001" placeholder="g" value={row.gross_weight} onChange={(e) => handleChange(index, 'gross_weight', e.target.value)} className="w-full p-2 border rounded text-sm" /></td>
-                  <td className="p-2 bg-yellow-50"><input type="number" step="0.1" value={row.purchase_touch_pct} onChange={(e) => handleChange(index, 'purchase_touch_pct', e.target.value)} className="w-full p-2 border border-yellow-200 rounded text-sm" /></td>
-                  <td className="p-2 bg-blue-50"><input type="number" step="0.1" value={row.wastage_pct} onChange={(e) => handleChange(index, 'wastage_pct', e.target.value)} className="w-full p-2 border border-blue-200 rounded text-sm" /></td>
-                  <td className="p-2 bg-blue-50"><input type="number" value={row.making_charge} onChange={(e) => handleChange(index, 'making_charge', e.target.value)} className="w-full p-2 border border-blue-200 rounded text-sm" /></td>
+                  <td className="p-2 space-y-1">
+                      <input type="number" step="0.001" placeholder="Gross" value={row.gross_weight} onChange={(e) => handleChange(index, 'gross_weight', e.target.value)} className="w-full p-1 border rounded text-xs" />
+                      <input type="number" step="0.001" placeholder="Stone" value={row.stone_weight} onChange={(e) => handleChange(index, 'stone_weight', e.target.value)} className="w-full p-1 border rounded text-xs" />
+                      <div className="text-xs font-bold text-green-700">Net: {row.net_weight}</div>
+                  </td>
+
+                  <td className="p-2 bg-blue-50 space-y-1">
+                      <div className="flex items-center text-xs"><span className="w-8">Wst%</span><input type="number" step="0.1" value={row.wastage_pct} onChange={(e) => handleChange(index, 'wastage_pct', e.target.value)} className="w-full p-1 border rounded" /></div>
+                      <div className="flex items-center text-xs"><span className="w-8">MC₹</span><input type="number" value={row.making_charge} onChange={(e) => handleChange(index, 'making_charge', e.target.value)} className="w-full p-1 border rounded" /></div>
+                  </td>
+                  
                   <td className="p-2 w-16"><input type="number" value={row.stock_quantity} onChange={(e) => handleChange(index, 'stock_quantity', e.target.value)} className="w-full p-2 border rounded text-sm" /></td>
-                  <td className="p-2 text-center"><button type="button" onClick={() => removeRow(index)} className="text-red-500 font-bold">X</button></td>
+                  <td className="p-2 text-center"><button type="button" onClick={() => removeRow(index)} className="text-red-500 font-bold text-xl">×</button></td>
                 </tr>
               ))}
             </tbody>

@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const multer = require('multer');
+
+// Memory storage for handling file uploads
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
 const pool = new Pool({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
@@ -9,86 +15,192 @@ const pool = new Pool({
     database: process.env.DB_NAME,
 });
 
-// GET /api/products - Calculates Live Price MINUS Discount
-// backend/routes/products.js (Partial update to GET route)
+// --- HELPER: Calculate Prices ---
+const calculatePrice = (product, metalRate) => {
+    const netWeight = parseFloat(product.net_weight);
+    const makingCharge = parseFloat(product.making_charge);
+    const wastagePct = parseFloat(product.wastage_pct);
+    
+    const rawMetalValue = netWeight * metalRate;
+    const wastageValue = (rawMetalValue * wastagePct) / 100;
+    
+    let actualMakingCharge = makingCharge;
+    if (product.making_charge_type === 'PERCENTAGE') {
+        actualMakingCharge = (rawMetalValue * makingCharge) / 100;
+    }
 
+    const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
+    const gstAmount = subtotal * 0.03;
+    return (subtotal + gstAmount).toFixed(2);
+};
+
+// 1. GET ALL PRODUCTS (List View)
 router.get('/', async (req, res) => {
     try {
         const productsResult = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
         const ratesResult = await pool.query('SELECT metal_type, rate_per_gram FROM metal_rates');
         
         const liveRates = {};
-        ratesResult.rows.forEach(rate => { liveRates[rate.metal_type] = parseFloat(rate.rate_per_gram); });
+        ratesResult.rows.forEach(r => liveRates[r.metal_type] = parseFloat(r.rate_per_gram));
 
-        const now = new Date(); // Current time for auto-revocation check
-
-        const productsWithLivePrices = productsResult.rows.map(product => {
+        const products = productsResult.rows.map(product => {
             const metalRate = liveRates[product.metal_type] || 0;
-            const netWeight = parseFloat(product.net_weight);
-            const rawMetalValue = netWeight * metalRate;
-            const wastageValue = (rawMetalValue * parseFloat(product.wastage_pct)) / 100;
-            const subtotal = rawMetalValue + wastageValue + parseFloat(product.making_charge);
-            const gstAmount = subtotal * 0.03;
-            const finalBeforeDiscount = subtotal + gstAmount;
+            const finalPrice = calculatePrice(product, metalRate);
 
-            // AUTOMATED REVOCATION LOGIC:
-            // Check if a discount window is set AND if 'now' is within that window
-            let isDiscountActive = false;
-            if (product.discount_start && product.discount_end) {
-                const start = new Date(product.discount_start);
-                const end = new Date(product.discount_end);
-                isDiscountActive = now >= start && now <= end;
-            }
-
-            let discountAmount = 0;
-            if (isDiscountActive) {
-                const discVal = parseFloat(product.discount_value || 0);
-                if (product.discount_type === 'FLAT') {
-                    discountAmount = discVal;
-                } else if (product.discount_type === 'PERCENTAGE') {
-                    discountAmount = (finalBeforeDiscount * discVal) / 100;
-                }
+            // Main Image to Base64
+            let mainImage = null;
+            if (product.main_image_url) {
+                mainImage = `data:image/jpeg;base64,${product.main_image_url.toString('base64')}`;
             }
 
             return {
                 ...product,
-                is_discount_active: isDiscountActive, // Helper for frontend
-                price_breakdown: {
-                    original_price: finalBeforeDiscount.toFixed(2),
-                    discount_amount: discountAmount.toFixed(2),
-                    final_total_price: (finalBeforeDiscount - discountAmount).toFixed(2)
-                }
+                main_image_url: mainImage,
+                price_breakdown: { final_total_price: finalPrice }
             };
         });
-        res.json(productsWithLivePrices);
+
+        res.json(products);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// PATCH /api/products/bulk-pricing - Now supports discounts
-router.patch('/bulk-pricing', async (req, res) => {
-    const { ids, wastage_pct, making_charge, discount_value, discount_type } = req.body;
-    if (!ids || ids.length === 0) return res.status(400).json({ error: "No IDs" });
+// 2. GET SINGLE PRODUCT (With Gallery Images)
+router.get('/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const productRes = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+        if (productRes.rows.length === 0) return res.status(404).json({ error: "Product not found" });
+
+        const product = productRes.rows[0];
+        
+        // Convert Main Image
+        if (product.main_image_url) {
+            product.main_image_url = `data:image/jpeg;base64,${product.main_image_url.toString('base64')}`;
+        }
+
+        // Fetch Gallery Images
+        const galleryRes = await pool.query('SELECT id, image_data FROM product_images WHERE product_id = $1', [id]);
+        const galleryImages = galleryRes.rows.map(img => ({
+            id: img.id,
+            url: `data:image/jpeg;base64,${img.image_data.toString('base64')}`
+        }));
+
+        res.json({ ...product, gallery_images: galleryImages });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Error fetching details" });
+    }
+});
+
+// 3. POST NEW PRODUCT (With Multiple Images)
+router.post('/', upload.array('images'), async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { 
+            sku, name, description, metal_type, item_type,
+            gross_weight, stone_weight, net_weight, making_charge_type, 
+            making_charge, wastage_pct 
+        } = req.body;
+
+        const mainImageBuffer = req.files && req.files.length > 0 ? req.files[0].buffer : null;
+
+        const insertText = `
+            INSERT INTO products 
+            (sku, name, description, main_image_url, metal_type, item_type, gross_weight, stone_weight, net_weight, making_charge_type, making_charge, wastage_pct) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+            RETURNING id`;
+        
+        const productRes = await client.query(insertText, [
+            sku, name, description, mainImageBuffer, metal_type, item_type, 
+            gross_weight, stone_weight, net_weight, making_charge_type, making_charge, wastage_pct
+        ]);
+        const productId = productRes.rows[0].id;
+
+        // Save all images to gallery table as well (or just remaining ones)
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                await client.query('INSERT INTO product_images (product_id, image_data) VALUES ($1, $2)', [productId, file.buffer]);
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: "Product saved", productId });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).json({ error: 'Save error' });
+    } finally {
+        client.release();
+    }
+});
+
+// 4. PUT UPDATE PRODUCT (Edit Text + Images)
+// fields: thumbnail (1 file), new_gallery_images (multiple files)
+router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'new_gallery_images' }]), async (req, res) => {
+    const { id } = req.params;
+    const client = await pool.connect();
 
     try {
-        let updateQuery = 'UPDATE products SET ';
-        const params = [];
-        const updateParts = [];
+        await client.query('BEGIN');
+        
+        const { 
+            name, item_type, metal_type, gross_weight, 
+            net_weight, wastage_pct, making_charge, deleted_gallery_ids 
+        } = req.body;
 
-        if (wastage_pct !== null) { params.push(wastage_pct); updateParts.push(`wastage_pct = $${params.length}`); }
-        if (making_charge !== null) { params.push(making_charge); updateParts.push(`making_charge = $${params.length}`); }
-        if (discount_value !== null) { params.push(discount_value); updateParts.push(`discount_value = $${params.length}`); }
-        if (discount_type) { params.push(discount_type); updateParts.push(`discount_type = $${params.length}`); }
+        // 1. Update Text Fields
+        let updateQuery = `
+            UPDATE products SET 
+            name=$1, item_type=$2, metal_type=$3, gross_weight=$4, 
+            net_weight=$5, wastage_pct=$6, making_charge=$7 
+            WHERE id=$8`;
+        
+        await client.query(updateQuery, [
+            name, item_type, metal_type, gross_weight, 
+            net_weight, wastage_pct, making_charge, id
+        ]);
 
-        updateQuery += updateParts.join(', ') + ` WHERE id = ANY($${params.length + 1})`;
-        params.push(ids);
+        // 2. Update Thumbnail if provided
+        if (req.files['thumbnail']) {
+            await client.query('UPDATE products SET main_image_url=$1 WHERE id=$2', [req.files['thumbnail'][0].buffer, id]);
+        }
 
-        await pool.query(updateQuery, params);
-        res.json({ message: "Updated" });
+        // 3. Delete Removed Gallery Images
+        if (deleted_gallery_ids) {
+            const idsToDelete = JSON.parse(deleted_gallery_ids); // Expecting JSON array string: "[1, 4]"
+            if (idsToDelete.length > 0) {
+                await client.query('DELETE FROM product_images WHERE id = ANY($1::int[])', [idsToDelete]);
+            }
+        }
+
+        // 4. Insert New Gallery Images
+        if (req.files['new_gallery_images']) {
+            for (const file of req.files['new_gallery_images']) {
+                await client.query('INSERT INTO product_images (product_id, image_data) VALUES ($1, $2)', [id, file.buffer]);
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: "Product updated successfully" });
     } catch (err) {
-        res.status(500).json({ error: 'Bulk update error' });
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).json({ error: "Update failed" });
+    } finally {
+        client.release();
     }
+});
+
+// 5. DELETE PRODUCT
+router.delete('/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
+        res.json({ message: "Deleted" });
+    } catch (err) { res.status(500).json({ error: 'Delete error' }); }
 });
 
 module.exports = router;
