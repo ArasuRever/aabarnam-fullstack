@@ -7,7 +7,9 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+// Increased limit for handling base64 or large JSON if needed
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // PostgreSQL Connection
 const pool = new Pool({
@@ -18,37 +20,25 @@ const pool = new Pool({
     database: process.env.DB_NAME,
 });
 
-// Test Database Connection
 pool.connect()
     .then(() => console.log('Connected to Aabarnam Database ✅'))
     .catch((err) => console.error('Database connection error ❌', err.stack));
 
-// --- API ROUTES START HERE ---
-
-// Import the rates route
+// API ROUTES
 const ratesRoutes = require('./routes/rates');
-app.use('/api/rates', ratesRoutes);
-
-// Import the products route
 const productsRoutes = require('./routes/products');
-app.use('/api/products', productsRoutes);
-
-// Import the pincodes route
 const pincodeRoutes = require('./routes/pincodes');
-app.use('/api/pincodes', pincodeRoutes);
-
-// Import the auth route (NEW)
 const authRoutes = require('./routes/auth');
+
+app.use('/api/rates', ratesRoutes);
+app.use('/api/products', productsRoutes);
+app.use('/api/pincodes', pincodeRoutes);
 app.use('/api/auth', authRoutes);
 
-// --- API ROUTES END HERE ---
-
-// Basic Route
 app.get('/', (req, res) => {
     res.send('Aabarnam Backend API is running!');
 });
 
-// Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT} 🚀`);
