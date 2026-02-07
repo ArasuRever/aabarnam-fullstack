@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 const AdminLayout = ({ children }) => {
-  const navigate = useNavigate();
   const location = useLocation();
+  const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('adminUser'));
   
-  // State to control Sidebar visibility
+  // State for sidebar toggle
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const menuItems = [
+    { name: 'Dashboard', path: '/dashboard', icon: '📊' },
+    { name: 'Inventory', path: '/products', icon: '💎' },
+    { name: 'Daily Rates', path: '/daily-rates', icon: '📈' },
+    { name: 'Pricing Rules', path: '/pricing-rules', icon: '⚙️' },
+  ];
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
@@ -15,62 +22,92 @@ const AdminLayout = ({ children }) => {
     navigate('/');
   };
 
-  const isActive = (path) => location.pathname === path ? 'bg-gray-800 text-gold' : 'hover:bg-gray-800';
-
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
       
-      {/* Sidebar - Fixed to prevent layout breaking */}
+      {/* Sidebar - Transitioning width */}
       <aside 
-        className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-black text-white flex flex-col transition-all duration-300 ease-in-out h-full z-20 shadow-xl overflow-hidden shrink-0`}
+        className={`${
+          isSidebarOpen ? 'w-64' : 'w-0'
+        } bg-gray-900 text-white flex flex-col transition-all duration-300 ease-in-out h-full z-20 shadow-2xl overflow-hidden shrink-0`}
       >
-        <div className="p-6 text-2xl font-bold text-gold border-b border-gray-800 min-w-[16rem]">
-          Aabarnam
+        {/* Brand Header */}
+        <div className="p-6 text-2xl font-bold border-b border-gray-800 text-gold min-w-[16rem]">
+          Aabarnam Admin
         </div>
-        <nav className="flex-1 p-4 space-y-2 min-w-[16rem]">
-          <Link to="/dashboard" className={`block w-full text-left px-4 py-3 rounded font-semibold transition ${isActive('/dashboard')}`}>
-            Dashboard
-          </Link>
-          <Link to="/daily-rates" className={`block w-full text-left px-4 py-3 rounded font-semibold transition ${isActive('/daily-rates')}`}>
-            Daily Rates
-          </Link>
-          <Link to="/products" className={`block w-full text-left px-4 py-3 rounded font-semibold transition ${isActive('/products')}`}>
-            Products
-          </Link>
+
+        {/* Navigation Links */}
+        <nav className="flex-grow mt-4 min-w-[16rem]">
+          {menuItems.map((item) => (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex items-center px-6 py-4 transition-all duration-200 ${
+                location.pathname === item.path 
+                ? 'bg-gray-800 border-r-4 border-gold text-gold' 
+                : 'hover:bg-gray-800 text-gray-400 hover:text-white'
+              }`}
+            >
+              <span className="mr-3 text-lg">{item.icon}</span>
+              <span className="font-semibold">{item.name}</span>
+            </Link>
+          ))}
         </nav>
-        <div className="p-4 border-t border-gray-800 min-w-[16rem]">
-          <p className="text-sm text-gray-400 mb-2 truncate">User: {user?.name}</p>
+
+        {/* User Profile & Logout Section */}
+        <div className="p-6 border-t border-gray-800 min-w-[16rem] bg-gray-900">
+          <div className="mb-4">
+            <p className="text-xs text-gray-500 uppercase tracking-widest">Logged in as</p>
+            <p className="text-sm font-bold text-gray-200 truncate">{user?.name || 'Administrator'}</p>
+          </div>
           <button 
             onClick={handleLogout}
-            className="w-full py-2 bg-red-600 hover:bg-red-700 rounded transition font-semibold"
+            className="w-full py-2 bg-red-600/10 border border-red-600/50 text-red-500 rounded font-bold hover:bg-red-600 hover:text-white transition-all duration-200"
           >
-            Logout
+            Logout 🚪
           </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-full">
+        
         {/* Top Header with Hamburger Icon */}
-        <header className="bg-white border-b shadow-sm h-16 flex items-center px-4 shrink-0">
-          <button 
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 bg-gray-100 rounded hover:bg-gray-200 transition focus:outline-none"
-            title="Toggle Sidebar"
-          >
-            {/* SVG Hamburger Icon */}
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path>
-            </svg>
-          </button>
-          <h2 className="ml-4 text-xl font-bold text-gray-800">Admin Control</h2>
+        <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 shrink-0 z-10">
+          <div className="flex items-center">
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors focus:outline-none"
+              title="Toggle Menu"
+            >
+              <svg 
+                className={`w-6 h-6 transition-transform duration-300 ${isSidebarOpen ? '' : 'rotate-180'}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <h2 className="ml-4 text-xl font-bold text-gray-800">
+              {menuItems.find(m => m.path === location.pathname)?.name || 'Admin Control'}
+            </h2>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <span className="text-xs font-bold px-2 py-1 bg-gold/10 text-gold rounded border border-gold/20">
+              LIVE SYSTEM
+            </span>
+          </div>
         </header>
 
-        {/* Scrollable Page Content */}
-        <div className="p-8 overflow-y-auto flex-1 bg-gray-100">
-          {children}
-        </div>
-      </main>
+        {/* Scrollable Content Container */}
+        <main className="flex-1 overflow-y-auto bg-gray-50 p-8">
+          <div className="max-w-7xl mx-auto">
+            {children}
+          </div>
+        </main>
+      </div>
 
     </div>
   );

@@ -6,10 +6,16 @@ const AddProduct = () => {
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
 
+  // Dynamic lists that can be expanded by the user
+  const [itemTypes, setItemTypes] = useState(['RING', 'CHAIN', 'NECKLACE', 'BANGLES', 'EARRINGS', 'BRACELET', 'HARAM', 'PENDANT']);
+  const [commonNames, setCommonNames] = useState(['Bridal Haram', 'Singapore Chain', 'Stone Ring', 'Plain Bangles', 'Temple Necklace']);
+
   const defaultRow = {
     barcode: '', 
-    image_preview: null, // NEW: For showing the uploaded photo
+    image_preview: null,
+    image_file: null, 
     name: '',
+    item_type: 'RING',
     metal_type: '22K_GOLD',
     gross_weight: '',
     stone_weight: '0',
@@ -24,12 +30,26 @@ const AddProduct = () => {
 
   const [rows, setRows] = useState([defaultRow]);
 
+  const handleAddNewType = () => {
+    const newType = prompt("Enter new Item Type (e.g., ANKLET):");
+    if (newType && !itemTypes.includes(newType.toUpperCase())) {
+      setItemTypes([...itemTypes, newType.toUpperCase()]);
+    }
+  };
+
+  const handleAddNewName = () => {
+    const newName = prompt("Enter new Item Name (e.g., Antique Mala):");
+    if (newName && !commonNames.includes(newName)) {
+      setCommonNames([...commonNames, newName]);
+    }
+  };
+
   const generateBarcode = (row) => {
     if (!row.name || !row.gross_weight) return '';
     const metalCode = row.metal_type === '22K_GOLD' ? '22K' : row.metal_type === '24K_GOLD' ? '24K' : 'SLV';
-    const nameCode = row.name.replace(/\s+/g, '').substring(0, 4).toUpperCase();
+    const typeCode = row.item_type.substring(0, 3).toUpperCase();
     const weightCode = Math.round(parseFloat(row.gross_weight) * 100);
-    return `${metalCode}-${nameCode}-${weightCode}`;
+    return `${metalCode}-${typeCode}-${weightCode}`;
   };
 
   const addRow = () => setRows([...rows, defaultRow]);
@@ -38,12 +58,11 @@ const AddProduct = () => {
     if (rows.length > 1) setRows(rows.filter((_, i) => i !== index));
   };
 
-  // NEW: Handle Image Upload & Preview
   const handleImageUpload = (index, file) => {
     if (file) {
       const updatedRows = [...rows];
       updatedRows[index].image_file = file;
-      updatedRows[index].image_preview = URL.createObjectURL(file); // Create local preview
+      updatedRows[index].image_preview = URL.createObjectURL(file);
       setRows(updatedRows);
     }
   };
@@ -58,7 +77,7 @@ const AddProduct = () => {
       updatedRows[index].net_weight = (gross - stone).toFixed(3);
     }
 
-    if (['name', 'metal_type', 'gross_weight'].includes(field)) {
+    if (['name', 'metal_type', 'gross_weight', 'item_type'].includes(field)) {
       updatedRows[index].barcode = generateBarcode(updatedRows[index]);
     }
 
@@ -70,20 +89,34 @@ const AddProduct = () => {
     setSaving(true);
 
     try {
-      const promises = rows.map(row => 
-        axios.post('http://localhost:5000/api/products', {
-          ...row,
-          sku: row.barcode,
-          // For now, using a placeholder if no image, we will connect real storage next!
-          main_image_url: row.image_preview || 'https://via.placeholder.com/500', 
-          description: 'Premium jewelry piece.'
-        })
-      );
+      const promises = rows.map(row => {
+        const formData = new FormData();
+        formData.append('sku', row.barcode);
+        formData.append('name', row.name);
+        formData.append('item_type', row.item_type);
+        formData.append('metal_type', row.metal_type);
+        formData.append('gross_weight', row.gross_weight);
+        formData.append('stone_weight', row.stone_weight);
+        formData.append('net_weight', row.net_weight);
+        formData.append('making_charge_type', row.making_charge_type);
+        formData.append('making_charge', row.making_charge);
+        formData.append('wastage_pct', row.wastage_pct);
+        formData.append('description', `${row.item_type} - Premium jewelry piece.`);
+        
+        if (row.image_file) {
+          formData.append('image', row.image_file);
+        }
+
+        return axios.post('http://localhost:5000/api/products', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+      });
 
       await Promise.all(promises);
       alert(`${rows.length} Product(s) successfully added! ✅`);
       navigate('/products');
     } catch (err) {
+      console.error(err);
       alert('Error adding products. Check console.');
     } finally {
       setSaving(false);
@@ -92,22 +125,27 @@ const AddProduct = () => {
 
   return (
     <div className="w-full bg-white p-6 rounded-lg shadow-sm border">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Batch Stock Entry</h1>
-          <p className="text-gray-500 text-sm">Upload a photo for each item to complete the entry.</p>
+          <p className="text-gray-500 text-sm">Add custom types and names on the fly.</p>
         </div>
-        <button onClick={addRow} className="bg-gray-800 text-white px-4 py-2 rounded font-bold hover:bg-black transition">+ Add Row</button>
+        <div className="flex gap-2">
+            <button type="button" onClick={handleAddNewType} className="bg-blue-50 text-blue-700 px-3 py-2 rounded text-xs font-bold border border-blue-200 hover:bg-blue-100">+ New Type</button>
+            <button type="button" onClick={handleAddNewName} className="bg-green-50 text-green-700 px-3 py-2 rounded text-xs font-bold border border-green-200 hover:bg-green-100">+ New Name</button>
+            <button type="button" onClick={addRow} className="bg-gray-800 text-white px-4 py-2 rounded font-bold hover:bg-black transition">+ Add Row</button>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit}>
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1300px]">
+          <table className="w-full text-left border-collapse min-w-[1400px]">
             <thead>
               <tr className="bg-gray-100 border-b">
-                <th className="p-3 text-sm font-bold text-gray-700">Photo</th> {/* NEW COLUMN */}
+                <th className="p-3 text-sm font-bold text-gray-700">Photo</th>
+                <th className="p-3 text-sm font-bold text-gray-700">Type</th>
+                <th className="p-3 text-sm font-bold text-gray-700">Name</th>
                 <th className="p-3 text-sm font-bold text-gray-700">Auto-Barcode</th>
-                <th className="p-3 text-sm">Name</th>
                 <th className="p-3 text-sm">Metal</th>
                 <th className="p-3 text-sm">Gross Wt</th>
                 <th className="p-3 text-sm bg-yellow-50 text-yellow-800">Touch %</th>
@@ -120,8 +158,6 @@ const AddProduct = () => {
             <tbody>
               {rows.map((row, index) => (
                 <tr key={index} className="border-b hover:bg-gray-50">
-                  
-                  {/* IMAGE UPLOAD COLUMN */}
                   <td className="p-2 w-20">
                     <label className="cursor-pointer">
                       {row.image_preview ? (
@@ -135,14 +171,35 @@ const AddProduct = () => {
                     </label>
                   </td>
 
+                  <td className="p-2">
+                    <select value={row.item_type} onChange={(e) => handleChange(index, 'item_type', e.target.value)} className="w-full p-2 border rounded text-sm bg-white">
+                      {itemTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                  </td>
+
+                  <td className="p-2">
+                    <input 
+                      list="item-names" 
+                      required 
+                      placeholder="Select or type..." 
+                      value={row.name} 
+                      onChange={(e) => handleChange(index, 'name', e.target.value)} 
+                      className="w-full p-2 border rounded text-sm" 
+                    />
+                    <datalist id="item-names">
+                      {commonNames.map(name => <option key={name} value={name} />)}
+                    </datalist>
+                  </td>
+
                   <td className="p-2"><input readOnly value={row.barcode} className="w-full p-2 bg-gray-200 border rounded text-xs font-mono font-bold" /></td>
-                  <td className="p-2"><input required placeholder="Name" value={row.name} onChange={(e) => handleChange(index, 'name', e.target.value)} className="w-full p-2 border rounded text-sm" /></td>
+                  
                   <td className="p-2">
                     <select value={row.metal_type} onChange={(e) => handleChange(index, 'metal_type', e.target.value)} className="w-full p-2 border rounded text-sm">
                       <option value="22K_GOLD">22K Gold</option>
                       <option value="SILVER">Silver</option>
                     </select>
                   </td>
+                  
                   <td className="p-2"><input type="number" step="0.001" placeholder="g" value={row.gross_weight} onChange={(e) => handleChange(index, 'gross_weight', e.target.value)} className="w-full p-2 border rounded text-sm" /></td>
                   <td className="p-2 bg-yellow-50"><input type="number" step="0.1" value={row.purchase_touch_pct} onChange={(e) => handleChange(index, 'purchase_touch_pct', e.target.value)} className="w-full p-2 border border-yellow-200 rounded text-sm" /></td>
                   <td className="p-2 bg-blue-50"><input type="number" step="0.1" value={row.wastage_pct} onChange={(e) => handleChange(index, 'wastage_pct', e.target.value)} className="w-full p-2 border border-blue-200 rounded text-sm" /></td>
