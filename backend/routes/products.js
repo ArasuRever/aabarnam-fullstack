@@ -203,4 +203,65 @@ router.delete('/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Delete error' }); }
 });
 
+// GET /api/products/:id - Fetch Single Product (Used by ProductDetails and Cart)
+router.get('/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const productRes = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+        
+        if (productRes.rows.length === 0) {
+            return res.status(404).json({ error: "Product not found" });
+        }
+
+        const product = productRes.rows[0];
+
+        // Fetch Live Rates
+        const ratesResult = await pool.query('SELECT metal_type, rate_per_gram FROM metal_rates');
+        const liveRates = {};
+        ratesResult.rows.forEach(r => liveRates[r.metal_type] = parseFloat(r.rate_per_gram));
+
+        // Calculate Price
+        const metalRate = liveRates[product.metal_type] || 0;
+        const netWeight = parseFloat(product.net_weight);
+        const makingCharge = parseFloat(product.making_charge);
+        const wastagePct = parseFloat(product.wastage_pct);
+        
+        const rawMetalValue = netWeight * metalRate;
+        const wastageValue = (rawMetalValue * wastagePct) / 100;
+        
+        let actualMakingCharge = makingCharge;
+        if (product.making_charge_type === 'PERCENTAGE') {
+            actualMakingCharge = (rawMetalValue * makingCharge) / 100;
+        }
+
+        const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
+        const gstAmount = subtotal * 0.03;
+        const finalPrice = subtotal + gstAmount;
+
+        // Convert Images to Base64
+        let mainImage = null;
+        if (product.main_image_url) {
+            mainImage = `data:image/jpeg;base64,${product.main_image_url.toString('base64')}`;
+        }
+
+        // Fetch Gallery
+        const galleryRes = await pool.query('SELECT id, image_data FROM product_images WHERE product_id = $1', [id]);
+        const galleryImages = galleryRes.rows.map(img => ({
+            id: img.id,
+            url: `data:image/jpeg;base64,${img.image_data.toString('base64')}`
+        }));
+
+        res.json({
+            ...product,
+            main_image_url: mainImage,
+            gallery_images: galleryImages,
+            price_breakdown: { final_total_price: finalPrice.toFixed(2) }
+        });
+
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ error: 'Server error fetching product details' });
+    }
+});
+
 module.exports = router;
