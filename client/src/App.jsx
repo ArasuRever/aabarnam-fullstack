@@ -6,6 +6,7 @@ import ProductDetails from './pages/ProductDetails';
 import Cart from './pages/Cart';
 import Catalog from './pages/Catalog';
 import Checkout from './pages/Checkout';
+import Auth from './pages/Auth';
 
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
           <Route path="/cart" element={<Cart />} />
           <Route path="/collections/:category" element={<Catalog />} />
           <Route path="/checkout" element={<Checkout />} />
+          <Route path="/auth" element={<Auth />} />
         </Routes>
       </div>
     </Router>
