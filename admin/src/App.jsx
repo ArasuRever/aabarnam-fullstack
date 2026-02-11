@@ -5,7 +5,8 @@ import DailyRates from './pages/DailyRates';
 import AdminLayout from './components/AdminLayout';
 import Products from './pages/Products';
 import AddProduct from './pages/AddProduct';
-import PricingRules from './pages/PricingRules'; // Import the new page
+import PricingRules from './pages/PricingRules'; 
+import Orders from './pages/Orders';
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('adminToken');
@@ -22,8 +23,8 @@ function App() {
         <Route path="/daily-rates" element={<ProtectedRoute><DailyRates /></ProtectedRoute>} />
         <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
         <Route path="/products/add" element={<ProtectedRoute><AddProduct /></ProtectedRoute>} />
-        {/* Register the new pricing route */}
         <Route path="/pricing-rules" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
+        <Route path="/orders" element={<Orders />} />
       </Routes>
     </Router>
   );

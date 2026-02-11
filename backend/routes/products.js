@@ -67,35 +67,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// 2. GET SINGLE PRODUCT (With Gallery Images)
-router.get('/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const productRes = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
-        if (productRes.rows.length === 0) return res.status(404).json({ error: "Product not found" });
-
-        const product = productRes.rows[0];
-        
-        // Convert Main Image
-        if (product.main_image_url) {
-            product.main_image_url = `data:image/jpeg;base64,${product.main_image_url.toString('base64')}`;
-        }
-
-        // Fetch Gallery Images
-        const galleryRes = await pool.query('SELECT id, image_data FROM product_images WHERE product_id = $1', [id]);
-        const galleryImages = galleryRes.rows.map(img => ({
-            id: img.id,
-            url: `data:image/jpeg;base64,${img.image_data.toString('base64')}`
-        }));
-
-        res.json({ ...product, gallery_images: galleryImages });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Error fetching details" });
-    }
-});
-
-// 3. POST NEW PRODUCT (With Multiple Images)
+// 2. POST NEW PRODUCT (With Multiple Images)
 router.post('/', upload.array('images'), async (req, res) => {
     const client = await pool.connect();
     try {
@@ -138,8 +110,7 @@ router.post('/', upload.array('images'), async (req, res) => {
     }
 });
 
-// 4. PUT UPDATE PRODUCT (Edit Text + Images)
-// fields: thumbnail (1 file), new_gallery_images (multiple files)
+// 3. PUT UPDATE PRODUCT (Edit Text + Images)
 router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'new_gallery_images' }]), async (req, res) => {
     const { id } = req.params;
     const client = await pool.connect();
@@ -171,7 +142,7 @@ router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'n
 
         // 3. Delete Removed Gallery Images
         if (deleted_gallery_ids) {
-            const idsToDelete = JSON.parse(deleted_gallery_ids); // Expecting JSON array string: "[1, 4]"
+            const idsToDelete = JSON.parse(deleted_gallery_ids); 
             if (idsToDelete.length > 0) {
                 await client.query('DELETE FROM product_images WHERE id = ANY($1::int[])', [idsToDelete]);
             }
@@ -195,7 +166,7 @@ router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'n
     }
 });
 
-// 5. DELETE PRODUCT
+// 4. DELETE PRODUCT
 router.delete('/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
@@ -203,7 +174,7 @@ router.delete('/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Delete error' }); }
 });
 
-// GET /api/products/:id - Fetch Single Product (Used by ProductDetails and Cart)
+// 5. GET /api/products/:id - Fetch Single Product (Used by ProductDetails and Cart)
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {

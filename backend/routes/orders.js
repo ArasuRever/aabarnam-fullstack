@@ -60,4 +60,41 @@ router.post('/', async (req, res) => {
     }
 });
 
+// GET /api/orders - Fetch all orders with their items (Admin)
+router.get('/', async (req, res) => {
+    try {
+        // We use json_agg to bundle the order items together with the main order
+        const query = `
+            SELECT o.*, 
+                   COALESCE(json_agg(json_build_object(
+                       'product_name', oi.product_name, 
+                       'quantity', oi.quantity, 
+                       'price', oi.price_at_purchase,
+                       'metal_type', oi.metal_type
+                   )) FILTER (WHERE oi.id IS NOT NULL), '[]') as items
+            FROM orders o
+            LEFT JOIN order_items oi ON o.id = oi.order_id
+            GROUP BY o.id
+            ORDER BY o.created_at DESC
+        `;
+        const result = await pool.query(query);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch orders' });
+    }
+});
+
+// PUT /api/orders/:id/status - Update order status (Admin)
+router.put('/:id/status', async (req, res) => {
+    const { status } = req.body;
+    try {
+        await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, req.params.id]);
+        res.json({ message: 'Status updated successfully' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
 module.exports = router;

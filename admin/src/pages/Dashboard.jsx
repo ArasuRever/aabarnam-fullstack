@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import { TrendingUp, Package, IndianRupee, Eye } from 'lucide-react';
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
@@ -20,120 +21,164 @@ const Dashboard = () => {
     fetchStats();
   }, []);
 
-  if (loading) return <div className="p-12 text-center text-gray-500 font-bold">Loading Command Center...</div>;
+  if (loading) return <div className="p-12 text-center text-gray-500 font-bold animate-pulse">Loading Command Center...</div>;
 
-  const { overview, category_breakdown } = stats;
+  const { overview, category_breakdown, recent_orders } = stats;
 
-  // Formatter for Currency
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(amount);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="flex justify-between items-end mb-8">
+    <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
+      
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">Command Center</h1>
-          <p className="text-gray-500 text-sm">Real-time inventory valuation based on live rates.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Command Center</h1>
+          <p className="text-gray-500 text-sm mt-1">Real-time store analytics and live inventory valuation.</p>
         </div>
-        <div className="text-right">
-           <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Total Inventory Value</p>
-           <h2 className="text-4xl font-extrabold text-gold text-shadow-sm">
+        <div className="text-left md:text-right bg-gray-50 p-4 rounded-xl border border-gray-100">
+           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1 flex items-center justify-end gap-1">
+             <TrendingUp size={12} className="text-green-500" /> Total Inventory Value
+           </p>
+           <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
              {formatCurrency(overview.total_valuation)}
            </h2>
         </div>
       </div>
 
-      {/* 1. TOP STATS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {/* GOLD CARD */}
-        <div className="bg-gradient-to-br from-yellow-50 to-white p-6 rounded-2xl border border-yellow-200 shadow-sm relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <span className="text-6xl">🏆</span>
+      {/* ROW 1: SALES & CORE METRICS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* Revenue Card */}
+        <div className="bg-gradient-to-br from-green-50 to-white p-6 rounded-2xl border border-green-100 shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                <IndianRupee size={64} className="text-green-600" />
             </div>
-            <h3 className="text-yellow-800 font-bold text-sm uppercase tracking-wider mb-2">Gold Reserves</h3>
-            <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-gray-800">{overview.total_gold_weight_g}</span>
-                <span className="text-sm text-gray-500 font-medium">grams</span>
+            <h3 className="text-green-800 font-bold text-sm uppercase tracking-wider mb-2">Total Sales Revenue</h3>
+            <div className="text-4xl font-extrabold text-gray-900 tracking-tight">
+               {formatCurrency(overview.total_revenue)}
             </div>
-            <div className="mt-4 pt-4 border-t border-yellow-100 flex justify-between items-center">
-               <span className="text-xs text-yellow-700 font-bold bg-yellow-100 px-2 py-1 rounded">22K & 24K</span>
-               <Link to="/products" className="text-xs font-bold text-yellow-700 hover:underline">View Stock →</Link>
-            </div>
+            <p className="text-xs text-green-600 font-medium mt-4 bg-green-100 inline-block px-2 py-1 rounded">Lifetime Earnings</p>
         </div>
 
-        {/* SILVER CARD */}
-        <div className="bg-gradient-to-br from-gray-50 to-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <span className="text-6xl">⚪</span>
+        {/* Orders Card */}
+        <div className="bg-gradient-to-br from-blue-50 to-white p-6 rounded-2xl border border-blue-100 shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                <Package size={64} className="text-blue-600" />
             </div>
-            <h3 className="text-gray-600 font-bold text-sm uppercase tracking-wider mb-2">Silver Reserves</h3>
-            <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-gray-800">{overview.total_silver_weight_g}</span>
-                <span className="text-sm text-gray-500 font-medium">grams</span>
+            <h3 className="text-blue-800 font-bold text-sm uppercase tracking-wider mb-2">Total Orders Placed</h3>
+            <div className="text-4xl font-extrabold text-gray-900 tracking-tight">
+               {overview.total_orders}
             </div>
-             <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
-               <span className="text-xs text-gray-500 font-bold bg-gray-100 px-2 py-1 rounded">92.5 & Fine</span>
-               <Link to="/products" className="text-xs font-bold text-gray-600 hover:underline">View Stock →</Link>
-            </div>
+            <Link to="/orders" className="text-xs font-bold text-blue-600 mt-4 hover:underline flex items-center gap-1">Manage Orders →</Link>
         </div>
 
-        {/* TOTAL ITEMS CARD */}
-        <div className="bg-gradient-to-br from-blue-50 to-white p-6 rounded-2xl border border-blue-200 shadow-sm relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <span className="text-6xl">📦</span>
+        {/* SKU Card */}
+        <div className="bg-gradient-to-br from-purple-50 to-white p-6 rounded-2xl border border-purple-100 shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                <span className="text-6xl">💎</span>
             </div>
-            <h3 className="text-blue-800 font-bold text-sm uppercase tracking-wider mb-2">Total SKU Count</h3>
-            <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-gray-800">{overview.total_items}</span>
-                <span className="text-sm text-gray-500 font-medium">Unique Items</span>
+            <h3 className="text-purple-800 font-bold text-sm uppercase tracking-wider mb-2">Total Unique SKUs</h3>
+            <div className="text-4xl font-extrabold text-gray-900 tracking-tight">
+               {overview.total_items}
             </div>
-             <div className="mt-4 pt-4 border-t border-blue-100 flex justify-between items-center">
-               <Link to="/products/add" className="text-xs font-bold text-white bg-blue-600 px-3 py-1.5 rounded shadow-md hover:bg-blue-700 transition">
-                  + Add Stock
-               </Link>
+            <Link to="/products" className="text-xs font-bold text-purple-600 mt-4 hover:underline flex items-center gap-1">View Inventory →</Link>
+        </div>
+
+      </div>
+
+      {/* ROW 2: INVENTORY RESERVES */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+            <div>
+                <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-1">Physical Gold Reserves</h3>
+                <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-gray-800">{overview.total_gold_weight_g}</span>
+                    <span className="text-sm text-gray-500 font-medium">grams (22K & 24K)</span>
+                </div>
             </div>
+            <div className="w-12 h-12 rounded-full bg-yellow-50 text-yellow-600 flex items-center justify-center text-xl shadow-inner">🏆</div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+            <div>
+                <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-1">Physical Silver Reserves</h3>
+                <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-gray-800">{overview.total_silver_weight_g}</span>
+                    <span className="text-sm text-gray-500 font-medium">grams (92.5)</span>
+                </div>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center text-xl shadow-inner">⚪</div>
         </div>
       </div>
 
-      {/* 2. CATEGORY BREAKDOWN */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* ROW 3: TRANSACTIONS & CATEGORIES */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+         
+         {/* Recent Orders (Takes 2/3 width) */}
+         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h3 className="font-bold text-gray-900">Recent Transactions</h3>
+              <Link to="/orders" className="text-xs font-bold text-gold hover:underline">View All</Link>
+            </div>
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 text-xs text-gray-400 uppercase tracking-wider">
+                <tr>
+                  <th className="p-4 font-bold">Order ID</th>
+                  <th className="p-4 font-bold">Customer</th>
+                  <th className="p-4 font-bold">Amount</th>
+                  <th className="p-4 font-bold">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-sm">
+                {recent_orders.length === 0 ? (
+                  <tr><td colSpan="4" className="p-8 text-center text-gray-400">No orders placed yet.</td></tr>
+                ) : (
+                  recent_orders.map(order => (
+                    <tr key={order.id} className="hover:bg-gray-50 transition">
+                      <td className="p-4 font-mono font-bold text-gray-600">#{order.id}</td>
+                      <td className="p-4 font-medium text-gray-900">{order.customer_name}</td>
+                      <td className="p-4 font-bold text-gray-900">{formatCurrency(order.total_amount)}</td>
+                      <td className="p-4">
+                        <span className={`text-[10px] font-bold px-3 py-1 rounded-full ${
+                          order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                          order.status === 'DELIVERED' ? 'bg-green-100 text-green-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {order.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+         </div>
+
+         {/* Category Breakdown (Takes 1/3 width) */}
          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-800 mb-6">Inventory Distribution</h3>
-            <div className="space-y-4">
-                {category_breakdown.map((cat, index) => (
-                    <div key={cat.item_type} className="flex items-center">
-                        <div className="w-32 text-sm font-bold text-gray-500">{cat.item_type || 'Uncategorized'}</div>
-                        <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden mx-4">
+            <h3 className="font-bold text-gray-900 mb-6">Inventory by Category</h3>
+            <div className="space-y-5">
+                {category_breakdown.length === 0 ? <p className="text-sm text-gray-400">No products added yet.</p> : null}
+                {category_breakdown.map((cat) => (
+                    <div key={cat.item_type}>
+                        <div className="flex justify-between text-sm mb-1">
+                            <span className="font-bold text-gray-600">{cat.item_type || 'Uncategorized'}</span>
+                            <span className="font-bold text-gray-900">{cat.count}</span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                             <div 
-                                className="h-full bg-gray-800 rounded-full" 
+                                className="h-full bg-gold rounded-full" 
                                 style={{ width: `${(cat.count / overview.total_items) * 100}%` }}
                             ></div>
                         </div>
-                        <div className="w-12 text-right text-sm font-bold text-gray-800">{cat.count}</div>
                     </div>
                 ))}
             </div>
          </div>
 
-         {/* QUICK ACTIONS */}
-         <div className="bg-gray-900 text-white p-6 rounded-2xl shadow-lg flex flex-col justify-center items-center text-center">
-            <div className="mb-4 text-5xl">🚀</div>
-            <h3 className="text-xl font-bold text-gold mb-2">Ready to Sell?</h3>
-            <p className="text-gray-400 text-sm mb-6 max-w-xs">Your inventory is live and priced. You can now start managing orders or update daily rates.</p>
-            <div className="flex gap-4">
-                <Link to="/daily-rates" className="px-6 py-3 bg-gold text-black font-bold rounded-lg hover:bg-yellow-500 transition">
-                    Update Rates
-                </Link>
-                <Link to="/products" className="px-6 py-3 bg-gray-800 text-white font-bold rounded-lg hover:bg-gray-700 transition">
-                    View Inventory
-                </Link>
-            </div>
-         </div>
       </div>
     </div>
   );

@@ -9,8 +9,10 @@ const AdminLayout = ({ children }) => {
   // State for sidebar toggle
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // UPDATED: Added Orders to the menu items
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: '📊' },
+    { name: 'Orders', path: '/orders', icon: '📦' }, // <--- New Orders Link
     { name: 'Inventory', path: '/products', icon: '💎' },
     { name: 'Daily Rates', path: '/daily-rates', icon: '📈' },
     { name: 'Pricing Rules', path: '/pricing-rules', icon: '⚙️' },
