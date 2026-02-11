@@ -7,3 +7,5 @@ Email arasu@aabarnam.com
 Password SecurePassword123!
 
 Note If you haven't initialized this account in your database yet, you just need to visit httplocalhost5000apiauthcreate-admin in your browser once. This will automatically generate your admin profile, and you can then log in using the credentials above.
+
+https://github.com/ArasuRever/aabarnam-fullstack

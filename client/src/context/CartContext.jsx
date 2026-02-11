@@ -5,18 +5,23 @@ const CartContext = createContext();
 export const useCart = () => useContext(CartContext);
 
 export const CartProvider = ({ children }) => {
-  // 1. Safety Shield: Load cart with error handling
+  // 1. Load cart & Auto-clean broken items
   const [cart, setCart] = useState(() => {
     try {
       const savedCart = localStorage.getItem('aabarnam_cart');
-      return savedCart ? JSON.parse(savedCart) : [];
+      if (savedCart) {
+          const parsedCart = JSON.parse(savedCart);
+          // MAGIC FIX: This line destroys the corrupted "Zero Price" items
+          return parsedCart.filter(item => item.price_breakdown && item.price_breakdown.final_total_price);
+      }
+      return [];
     } catch (e) {
-      console.error("Corrupt cart data found, resetting.", e);
+      console.error("Corrupt cart data, resetting.");
       return [];
     }
   });
 
-  // 2. Safety Shield: Save cart with error handling
+  // 2. Safe Save Shield
   useEffect(() => {
     try {
       localStorage.setItem('aabarnam_cart', JSON.stringify(cart));
@@ -25,10 +30,9 @@ export const CartProvider = ({ children }) => {
     }
   }, [cart]);
 
-  // INCREASE QTY (With Image Stripping)
+  // 3. INCREASE QTY & STRIP IMAGES (Prevents QuotaExceededError)
   const addToCart = (product) => {
-    // 3. SANITIZATION: Remove heavy images before saving
-    // We only keep the ID, name, price, etc.
+    // We separate the heavy images from the safe data
     const { main_image_url, gallery_images, ...safeProduct } = product;
 
     setCart((prevCart) => {
@@ -38,11 +42,10 @@ export const CartProvider = ({ children }) => {
           item.id === safeProduct.id ? { ...item, qty: item.qty + 1 } : item
         );
       }
-      return [...prevCart, { ...safeProduct, qty: 1 }];
+      return [...prevCart, { ...safeProduct, qty: 1 }]; // Save only lightweight data
     });
   };
 
-  // DECREASE QTY
   const decrementFromCart = (id) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === id);
@@ -55,7 +58,6 @@ export const CartProvider = ({ children }) => {
     });
   };
 
-  // REMOVE COMPLETELY
   const removeFromCart = (id) => {
     setCart((prevCart) => prevCart.filter((item) => item.id !== id));
   };
