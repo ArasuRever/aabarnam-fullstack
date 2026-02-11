@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom'; // Added useNavigate
 import { useCart } from '../context/CartContext';
 import { Trash2, Plus, Minus, ArrowRight, ShoppingBag } from 'lucide-react';
-import axios from 'axios'; // Ensure axios is imported
+import axios from 'axios'; 
 
 const Cart = () => {
   const { cart, addToCart, decrementFromCart, removeFromCart, cartTotal, cartCount } = useCart();
   const [productImages, setProductImages] = useState({});
+  const navigate = useNavigate(); // Initialize navigate hook
 
   // 1. Fetch Images for items in Cart
   useEffect(() => {
@@ -33,7 +34,7 @@ const Cart = () => {
     };
     
     if (cart.length > 0) fetchImages();
-  }, [cart]);
+  }, [cart, productImages]);
 
   if (cart.length === 0) {
     return (
@@ -43,7 +44,7 @@ const Cart = () => {
         </div>
         <h2 className="text-2xl font-serif font-bold text-gray-900 mb-2">Your Bag is Empty</h2>
         <p className="text-gray-500 mb-8 max-w-md">Looks like you haven't found your perfect piece yet. Explore our collection.</p>
-        <Link to="/" className="bg-black text-gold px-8 py-3 rounded-full font-bold hover:bg-gray-800 transition">Start Shopping</Link>
+        <Link to="/collections/all" className="bg-black text-gold px-8 py-3 rounded-full font-bold hover:bg-gray-800 transition">Start Shopping</Link>
       </div>
     );
   }
@@ -110,7 +111,12 @@ const Cart = () => {
                 <span className="font-bold text-xl text-gray-900">Total</span>
                 <span className="font-bold text-2xl text-gold-dark">₹{cartTotal.toFixed(2)}</span>
               </div>
-              <button onClick={() => alert("Proceeding to Checkout...")} className="w-full bg-black text-white py-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-lg">
+              
+              {/* UPDATED: Navigates to /checkout instead of alert */}
+              <button 
+                onClick={() => navigate('/checkout')} 
+                className="w-full bg-black text-white py-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-lg"
+              >
                 Checkout Securely <ArrowRight size={20} />
               </button>
             </div>

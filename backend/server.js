@@ -29,13 +29,15 @@ const ratesRoutes = require('./routes/rates');
 const productsRoutes = require('./routes/products');
 const pincodeRoutes = require('./routes/pincodes');
 const authRoutes = require('./routes/auth');
-const dashboardRoutes = require('./routes/dashboard'); // <--- NEW IMPORT
+const dashboardRoutes = require('./routes/dashboard');
+const ordersRoutes = require('./routes/orders');
 
 app.use('/api/rates', ratesRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/pincodes', pincodeRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/dashboard', dashboardRoutes); // <--- NEW ROUTE
+app.use('/api/dashboard', dashboardRoutes); 
+app.use('/api/orders', ordersRoutes);
 
 app.get('/', (req, res) => {
     res.send('Aabarnam Backend API is running!');
