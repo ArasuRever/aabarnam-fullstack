@@ -3,9 +3,11 @@ import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ShieldCheck, Lock } from 'lucide-react';
+import { useAuth } from '../context/AuthContext'; 
 
 const Checkout = () => {
   const { cart, cartTotal, clearCart } = useCart();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
@@ -29,7 +31,8 @@ const Checkout = () => {
       const orderData = {
         customer: formData,
         items: cart,
-        total_amount: cartTotal
+        total_amount: cartTotal,
+        userId: user ? user.id : null
       };
 
       const res = await axios.post('http://localhost:5000/api/orders', orderData);

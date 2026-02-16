@@ -1,12 +1,26 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Search, ShoppingBag, User, Menu, X } from 'lucide-react';
 import RateTicker from './RateTicker';
-import { useCart } from '../context/CartContext'; // Import Cart Context
+import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext'; 
 
 const Navbar = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
-  const { cartCount } = useCart(); // Get real-time cart count
+  const { cartCount } = useCart();
+
+  if (location.pathname === '/auth' || location.pathname === '/checkout') {
+      return (
+          <div className="bg-white py-6 flex justify-center border-b border-gray-100">
+              <Link to="/" className="text-3xl font-serif font-bold text-black tracking-tighter hover:opacity-80 transition">
+                 Aabarnam<span className="text-gold">.</span>
+              </Link>
+          </div>
+      );
+  }
 
   return (
     <div className="font-sans">
@@ -43,17 +57,21 @@ const Navbar = () => {
             </div>
 
             {/* Icons */}
-            <div className="flex items-center gap-4">
-              <button className="p-2 text-gray-600 hover:text-black transition hover:scale-110">
+            <div className="flex items-center space-x-4">
+              <button className="p-2 text-gray-600 hover:text-black transition hover:scale-110 hidden sm:block">
                 <Search size={20} />
               </button>
               
-              <Link to="/account" className="p-2 text-gray-600 hover:text-black transition hidden sm:block hover:scale-110">
+              {/* User Account / Login Icon */}
+              <button 
+                onClick={() => user ? navigate('/account') : navigate('/auth')} 
+                className="p-2 text-gray-600 hover:text-gold transition hover:scale-110"
+              >
                 <User size={20} />
-              </Link>
+              </button>
               
               {/* Cart Icon with Live Badge */}
-              <Link to="/cart" className="p-2 text-gray-600 hover:text-black transition relative group hover:scale-110">
+              <Link to="/cart" className="p-2 text-gray-600 hover:text-gold transition relative group hover:scale-110">
                 <ShoppingBag size={20} className="group-hover:text-gold transition-colors" />
                 {cartCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-gold text-black text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-sm animate-fade-in">
@@ -69,12 +87,18 @@ const Navbar = () => {
         {isOpen && (
           <div className="md:hidden bg-white border-t animate-fade-in-up">
             <div className="px-4 pt-4 pb-6 space-y-2">
-              <Link to="/" className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">Home</Link>
-              <Link to="/collections/gold" className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">Gold Collection</Link>
-              <Link to="/collections/silver" className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">Silver Collection</Link>
-              <Link to="/cart" className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">
+              <Link to="/" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">Home</Link>
+              <Link to="/collections/gold" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">Gold Collection</Link>
+              <Link to="/collections/silver" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">Silver Collection</Link>
+              <Link to="/cart" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50 rounded">
                 My Bag ({cartCount})
               </Link>
+              <button 
+                onClick={() => { setIsOpen(false); user ? navigate('/account') : navigate('/auth'); }}
+                className="block w-full text-left px-3 py-2 text-base font-medium text-gold bg-gray-50 rounded"
+              >
+                {user ? 'My Account' : 'Sign In / Register'}
+              </button>
             </div>
           </div>
         )}

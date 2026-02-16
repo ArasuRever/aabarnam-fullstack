@@ -7,6 +7,7 @@ import Cart from './pages/Cart';
 import Catalog from './pages/Catalog';
 import Checkout from './pages/Checkout';
 import Auth from './pages/Auth';
+import Account from './pages/Account';
 
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
           <Route path="/collections/:category" element={<Catalog />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/account" element={<Account />} />
         </Routes>
       </div>
     </Router>
