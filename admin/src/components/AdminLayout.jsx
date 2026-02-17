@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Package, DollarSign, Percent, LogOut, Users } from 'lucide-react';
 
 const AdminLayout = ({ children }) => {
   const location = useLocation();
@@ -12,7 +13,8 @@ const AdminLayout = ({ children }) => {
   // UPDATED: Added Orders to the menu items
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: '📊' },
-    { name: 'Orders', path: '/orders', icon: '📦' }, // <--- New Orders Link
+    { name: 'Orders', path: '/orders', icon: '📦' }, 
+    { name: 'Customers', path: '/customers', icon: '👥' },
     { name: 'Inventory', path: '/products', icon: '💎' },
     { name: 'Daily Rates', path: '/daily-rates', icon: '📈' },
     { name: 'Pricing Rules', path: '/pricing-rules', icon: '⚙️' },

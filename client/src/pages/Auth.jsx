@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { User, Lock, Mail, Phone, MapPin } from 'lucide-react';
+import toast from 'react-hot-toast'; // <--- 1. Imported toast
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -10,9 +11,9 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
-    identifier: '', // Used for login (phone or email)
+    identifier: '', 
     name: '', email: '', phone: '', password: '', 
-    address: '', city: '', pincode: '' // Used for registration
+    address: '', city: '', pincode: '' 
   });
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -23,14 +24,23 @@ const Auth = () => {
     try {
       if (isLogin) {
         await login(formData.identifier, formData.password);
-        alert("Welcome back! 💎");
+        // <--- 2. Replaced success alert with a styled toast --->
+        toast.success("Welcome back! 💎", {
+            style: { border: '1px solid #D4AF37', padding: '16px', color: '#000', fontWeight: 'bold' },
+            iconTheme: { primary: '#D4AF37', secondary: '#000' },
+        });
       } else {
         await register(formData);
-        alert("Account created successfully! 🎉");
+        // <--- 3. Replaced success alert with a styled toast --->
+        toast.success("Account created successfully! 🎉", {
+            style: { border: '1px solid #D4AF37', padding: '16px', color: '#000', fontWeight: 'bold' },
+            iconTheme: { primary: '#D4AF37', secondary: '#000' },
+        });
       }
       navigate('/');
     } catch (err) {
-      alert(err.response?.data?.error || "Authentication failed.");
+      // <--- 4. Replaced error alert with a toast --->
+      toast.error(err.response?.data?.error || "Authentication failed. Please try again.");
     } finally {
       setLoading(false);
     }
