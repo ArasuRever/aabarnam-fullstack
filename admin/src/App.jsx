@@ -25,7 +25,6 @@ function App() {
         <Route path="/products/add" element={<ProtectedRoute><AddProduct /></ProtectedRoute>} />
         <Route path="/pricing-rules" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
         <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
-        <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
       </Routes>
     </Router>
   );

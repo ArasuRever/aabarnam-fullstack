@@ -14,7 +14,7 @@ const pool = new Pool({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'aabarnam_super_secret_key_2026';
 
-// 1. POST /api/auth/register (Now includes initial address)
+// 1. POST /api/auth/register (Includes Address Book Logic)
 router.post('/register', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -56,8 +56,12 @@ router.post('/register', async (req, res) => {
 
 // 2. POST /api/auth/login (Accepts Phone OR Email)
 router.post('/login', async (req, res) => {
-    const { identifier, password } = req.body; // 'identifier' can be phone or email
+    // We grab identifier, but fallback to email just in case an old form sends it
+    const identifier = req.body.identifier || req.body.email; 
+    const password = req.body.password;
+
     try {
+        // Search the database for EITHER email OR phone number
         const userResult = await pool.query('SELECT * FROM users WHERE email = $1 OR phone = $1', [identifier]);
         if (userResult.rows.length === 0) return res.status(400).json({ error: 'Invalid Credentials' });
 
@@ -66,7 +70,11 @@ router.post('/login', async (req, res) => {
         if (!validPassword) return res.status(400).json({ error: 'Invalid Credentials' });
 
         const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-        res.json({ message: 'Login successful!', token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role } });
+        res.json({ 
+            message: 'Login successful!', 
+            token, 
+            user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role } 
+        });
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: 'Server error' });
@@ -99,6 +107,21 @@ router.delete('/addresses/:id', async (req, res) => {
         await pool.query('DELETE FROM user_addresses WHERE id = $1', [req.params.id]);
         res.json({ message: 'Address removed' });
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// 6. TEMPORARY ADMIN CREATION ROUTE (Keep this just in case!)
+router.get('/create-admin', async (req, res) => {
+    try {
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash('SecurePassword123!', salt);
+        await pool.query(
+            'INSERT INTO users (name, email, password_hash, phone, role) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (email) DO NOTHING',
+            ['Arasu', 'admin@aabarnam.com', hashedPassword, '9876543210', 'ADMIN']
+        );
+        res.send('Admin Account Created! Email: admin@aabarnam.com');
+    } catch (err) {
+        res.status(500).send('Error: ' + err.message);
+    }
 });
 
 module.exports = router;

@@ -92,6 +92,7 @@ router.post('/', upload.array('images'), async (req, res) => {
         ]);
         const productId = productRes.rows[0].id;
 
+        // Save all images to gallery table as well (or just remaining ones)
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
                 await client.query('INSERT INTO product_images (product_id, image_data) VALUES ($1, $2)', [productId, file.buffer]);
@@ -100,19 +101,10 @@ router.post('/', upload.array('images'), async (req, res) => {
 
         await client.query('COMMIT');
         res.json({ message: "Product saved", productId });
-
     } catch (err) {
         await client.query('ROLLBACK');
-        
-        // --- THE FIX IS HERE ---
-        if (err.code === '23505') { // Postgres code for UNIQUE constraint violation
-            console.error("Duplicate SKU blocked:", req.body.sku);
-            // Send a 400 Bad Request so the frontend knows exactly what happened
-            return res.status(400).json({ error: `A product with SKU "${req.body.sku}" already exists. Please use a unique SKU.` });
-        }
-        
-        console.error("Save error:", err);
-        res.status(500).json({ error: 'Failed to save product to database.' });
+        console.error(err);
+        res.status(500).json({ error: 'Save error' });
     } finally {
         client.release();
     }
@@ -183,12 +175,14 @@ router.delete('/:id', async (req, res) => {
 });
 
 // 5. GET /api/products/:id - Fetch Single Product (Used by ProductDetails and Cart)
-// GET /api/products/:id - Fetch Single Product
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const productRes = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
-        if (productRes.rows.length === 0) return res.status(404).json({ error: "Product not found" });
+        
+        if (productRes.rows.length === 0) {
+            return res.status(404).json({ error: "Product not found" });
+        }
 
         const product = productRes.rows[0];
 
@@ -216,30 +210,28 @@ router.get('/:id', async (req, res) => {
         const finalPrice = subtotal + gstAmount;
 
         // Convert Images to Base64
-        let mainImage = product.main_image_url ? `data:image/jpeg;base64,${product.main_image_url.toString('base64')}` : null;
+        let mainImage = null;
+        if (product.main_image_url) {
+            mainImage = `data:image/jpeg;base64,${product.main_image_url.toString('base64')}`;
+        }
 
+        // Fetch Gallery
         const galleryRes = await pool.query('SELECT id, image_data FROM product_images WHERE product_id = $1', [id]);
         const galleryImages = galleryRes.rows.map(img => ({
-            id: img.id, url: `data:image/jpeg;base64,${img.image_data.toString('base64')}`
+            id: img.id,
+            url: `data:image/jpeg;base64,${img.image_data.toString('base64')}`
         }));
 
         res.json({
             ...product,
             main_image_url: mainImage,
             gallery_images: galleryImages,
-            price_breakdown: { 
-                metal_rate: metalRate,
-                raw_metal_value: rawMetalValue.toFixed(2),
-                wastage_value: wastageValue.toFixed(2),
-                making_charge: actualMakingCharge.toFixed(2),
-                gst_amount: gstAmount.toFixed(2),
-                final_total_price: finalPrice.toFixed(2) 
-            }
+            price_breakdown: { final_total_price: finalPrice.toFixed(2) }
         });
 
     } catch (err) {
         console.error(err.message);
-        res.status(500).json({ error: 'Server error' });
+        res.status(500).json({ error: 'Server error fetching product details' });
     }
 });
 

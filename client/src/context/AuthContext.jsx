@@ -8,22 +8,25 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
 
+  // Check if user is already logged in when the app loads
   useEffect(() => {
     const storedUser = localStorage.getItem('aabarnam_user');
-    if (storedUser) setUser(JSON.parse(storedUser));
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
   }, []);
 
-  // Updated to use "identifier" (Phone or Email)
-  const login = async (identifier, password) => {
-    const res = await axios.post('http://localhost:5000/api/auth/login', { identifier, password });
+  const login = async (email, password) => {
+    const res = await axios.post('http://localhost:5000/api/auth/login', { email, password });
     setUser(res.data.user);
     localStorage.setItem('aabarnam_token', res.data.token);
     localStorage.setItem('aabarnam_user', JSON.stringify(res.data.user));
   };
 
-  // Updated to accept the full data object (including address)
-  const register = async (userData) => {
-    const res = await axios.post('http://localhost:5000/api/auth/register', userData);
+  const register = async (name, email, password) => {
+    const res = await axios.post('http://localhost:5000/api/auth/register', { 
+        name, email, password, role: 'CUSTOMER' 
+    });
     setUser(res.data.user);
     localStorage.setItem('aabarnam_token', res.data.token);
     localStorage.setItem('aabarnam_user', JSON.stringify(res.data.user));

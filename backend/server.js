@@ -30,8 +30,6 @@ const pincodeRoutes = require('./routes/pincodes');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const ordersRoutes = require('./routes/orders');
-const wishlistRoutes = require('./routes/wishlist');
-const usersRoutes = require('./routes/users');
 
 app.use('/api/rates', ratesRoutes);
 app.use('/api/products', productsRoutes);
@@ -39,9 +37,6 @@ app.use('/api/pincodes', pincodeRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes); 
 app.use('/api/orders', ordersRoutes);
-app.use('/api/wishlist', wishlistRoutes);
-app.use('/api/users', usersRoutes);
-
 
 app.get('/', (req, res) => {
     res.send('Aabarnam Backend API is running!');
