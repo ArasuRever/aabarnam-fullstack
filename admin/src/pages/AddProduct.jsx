@@ -86,7 +86,6 @@ const AddProduct = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-
     try {
       const promises = rows.map(row => {
         const formData = new FormData();
@@ -100,19 +99,18 @@ const AddProduct = () => {
         formData.append('making_charge_type', row.making_charge_type);
         formData.append('making_charge', row.making_charge);
         formData.append('wastage_pct', row.wastage_pct);
+        formData.append('description', row.description || `Handcrafted ${row.item_type}...`);
         
-        // NEW: Now sends the custom description, with a fallback if left empty
-        formData.append('description', row.description || `Experience the elegance of this handcrafted ${row.item_type.toLowerCase()}. Made with precision and care, this piece features authentic ${row.metal_type.replace('_', ' ')} and is perfect for both daily wear and special occasions.`);
+        // NEW: Send Wholesale Data
+        formData.append('purchase_touch_pct', row.purchase_touch_pct);
+        formData.append('purchase_mc', row.purchase_mc);
+        // If you added purchase_type to state, add it here too
         
         if (row.image_files && row.image_files.length > 0) {
             row.image_files.forEach(file => { formData.append('images', file); });
         }
-
-        return axios.post('http://localhost:5000/api/products', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
+        return axios.post('http://localhost:5000/api/products', formData);
       });
-
       await Promise.all(promises);
       alert(`${rows.length} Product(s) saved! ✅`);
       navigate('/products');

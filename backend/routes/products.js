@@ -69,41 +69,42 @@ router.post('/', upload.array('images'), async (req, res) => {
         const { 
             sku, name, description, metal_type, item_type,
             gross_weight, stone_weight, net_weight, making_charge_type, 
-            making_charge, wastage_pct 
+            making_charge, wastage_pct,
+            // NEW FIELDS FROM ADMIN PANEL
+            purchase_type, purchase_touch_pct, purchase_mc, purchase_fixed_price
         } = req.body;
 
         const mainImageBuffer = req.files && req.files.length > 0 ? req.files[0].buffer : null;
 
         const insertText = `
             INSERT INTO products 
-            (sku, name, description, main_image_url, metal_type, item_type, gross_weight, stone_weight, net_weight, making_charge_type, making_charge, wastage_pct) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+            (sku, name, description, main_image_url, metal_type, item_type, 
+             gross_weight, stone_weight, net_weight, making_charge_type, 
+             making_charge, wastage_pct, purchase_type, purchase_touch_pct, 
+             purchase_mc, purchase_fixed_price) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
             RETURNING id`;
         
         const productRes = await client.query(insertText, [
             sku, name, description, mainImageBuffer, metal_type, item_type, 
-            gross_weight, stone_weight, net_weight, making_charge_type, making_charge, wastage_pct
+            gross_weight, stone_weight, net_weight, making_charge_type, making_charge, wastage_pct,
+            purchase_type || 'WEIGHT_TOUCH', purchase_touch_pct || 91.6, 
+            purchase_mc || 0, purchase_fixed_price || 0
         ]);
+        
+        // ... rest of the image gallery code ...
         const productId = productRes.rows[0].id;
-
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
                 await client.query('INSERT INTO product_images (product_id, image_data) VALUES ($1, $2)', [productId, file.buffer]);
             }
         }
-
         await client.query('COMMIT');
         res.json({ message: "Product saved", productId });
     } catch (err) {
         await client.query('ROLLBACK');
-        if (err.code === '23505') { // Duplicate SKU constraint
-            return res.status(400).json({ error: `A product with SKU "${req.body.sku}" already exists.` });
-        }
-        console.error(err);
-        res.status(500).json({ error: 'Save error' });
-    } finally {
-        client.release();
-    }
+        // ... error handling ...
+    } finally { client.release(); }
 });
 
 // 3. PUT UPDATE PRODUCT

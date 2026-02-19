@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { ShoppingBag, ShieldCheck, Truck, RotateCcw, Star, Heart, MapPin, Info, X } from 'lucide-react';
+import { 
+  ShoppingBag, ShieldCheck, Truck, RotateCcw, 
+  Heart, MapPin, Info, X, MessageCircle, Send 
+} from 'lucide-react';
 import { useCart } from '../context/CartContext'; 
 import { useAuth } from '../context/AuthContext'; 
 import toast from 'react-hot-toast';
@@ -15,11 +18,20 @@ const ProductDetails = () => {
   const [loading, setLoading] = useState(true);
   const [activeImage, setActiveImage] = useState(null);
 
-  // New Pro States
+  // Delivery & UI States
   const [pincode, setPincode] = useState('');
   const [pincodeResult, setPincodeResult] = useState(null);
   const [checkingPincode, setCheckingPincode] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+
+  // AI Negotiation States
+  const [showChat, setShowChat] = useState(false);
+  const [userBid, setUserBid] = useState('');
+  const [isBargaining, setIsBargaining] = useState(false);
+  const [negotiatedPrice, setNegotiatedPrice] = useState(null);
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'bot', text: 'Namaste! I am the manager here. This piece is exquisite. Would you like to discuss the price?' }
+  ]);
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -36,11 +48,48 @@ const ProductDetails = () => {
     fetchProduct();
   }, [id]);
 
+  // AI Negotiation Logic
+  const handleBargain = async () => {
+    if (!userBid.trim()) return;
+    const currentInput = userBid;
+    setUserBid('');
+    setIsBargaining(true);
+    setChatMessages(prev => [...prev, { role: 'user', text: currentInput }]);
+
+    try {
+        const res = await axios.post('http://localhost:5000/api/bargain', { 
+            product_id: id, 
+            user_bid: currentInput 
+        });
+        
+        setChatMessages(prev => [...prev, { role: 'bot', text: res.data.response_message }]);
+        
+        if (res.data.status === 'accepted') {
+            setNegotiatedPrice(res.data.counter_offer);
+            toast.success("We have a deal! Price updated.");
+        }
+    } catch (err) {
+        toast.error("Manager is currently helping another client.");
+    } finally {
+        setIsBargaining(false);
+    }
+};
+
   const handleAddToCart = () => {
-    addToCart(product);
-    toast.success(`Added ${product.name} to your bag! 🛍️`, {
+    // If a price was negotiated, use that instead of the listed retail price
+    const finalPrice = negotiatedPrice || product.price_breakdown?.final_total_price;
+    
+    const productToCart = {
+      ...product,
+      price_breakdown: {
+        ...product.price_breakdown,
+        final_total_price: finalPrice
+      }
+    };
+
+    addToCart(productToCart);
+    toast.success(`Added ${product.name} at ₹${finalPrice}! 🛍️`, {
       style: { border: '1px solid #D4AF37', padding: '16px', color: '#000', fontWeight: 'bold' },
-      iconTheme: { primary: '#D4AF37', secondary: '#000' },
     });
   };
 
@@ -71,7 +120,7 @@ const ProductDetails = () => {
   if (loading) return <div className="h-screen flex items-center justify-center text-gold font-bold text-xl animate-pulse">Loading treasure...</div>;
   if (!product) return <div className="h-screen flex items-center justify-center text-gray-500">Product not found.</div>;
 
-  const price = product.price_breakdown?.final_total_price;
+  const displayPrice = negotiatedPrice || product.price_breakdown?.final_total_price;
   const breakdown = product.price_breakdown;
 
   return (
@@ -162,18 +211,25 @@ const ProductDetails = () => {
             {/* Price Block */}
             <div className="bg-gray-50 p-6 rounded-xl border border-gray-100 mb-6">
               <div className="flex items-end gap-3 mb-2">
-                <span className="text-4xl font-bold text-gray-900 tracking-tight">₹{price}</span>
-                <span className="text-xs text-green-600 font-bold mb-2 bg-green-100 px-2 py-1 rounded-full animate-pulse">● Live Price</span>
+                <span className="text-4xl font-bold text-gray-900 tracking-tight">₹{displayPrice}</span>
+                {negotiatedPrice && (
+                  <span className="text-xs text-green-600 font-bold mb-2 bg-green-100 px-2 py-1 rounded-full">
+                    Special Negotiated Deal ✅
+                  </span>
+                )}
+                {!negotiatedPrice && (
+                   <span className="text-xs text-green-600 font-bold mb-2 bg-green-100 px-2 py-1 rounded-full animate-pulse">● Live Price</span>
+                )}
               </div>
               <button 
                  onClick={() => setShowBreakdown(true)}
                  className="text-xs text-gold-dark font-bold hover:underline flex items-center gap-1 cursor-pointer mt-2"
               >
-                 <Info size={14} /> View Price Breakdown
+                 <span className="flex items-center gap-1"><Info size={14} /> View Price Breakdown</span>
               </button>
             </div>
 
-            {/* NEW: Pincode Checker */}
+            {/* Pincode Checker */}
             <div className="mb-8 bg-white border border-gray-200 p-4 rounded-xl">
                <label className="block text-xs font-bold text-gray-800 uppercase tracking-wide mb-3 flex items-center gap-2">
                  <MapPin size={16} className="text-gold" /> Check Delivery Availability
@@ -215,6 +271,7 @@ const ProductDetails = () => {
                </div>
             </div>
 
+            {/* ACTION BUTTONS */}
             <div className="flex gap-4 mb-10">
               <button 
                 onClick={handleAddToCart}
@@ -223,6 +280,16 @@ const ProductDetails = () => {
                 <ShoppingBag size={20} className="group-hover:text-gold transition-colors" /> 
                 Add to Cart
               </button>
+              
+              {/* Negotiate Button */}
+              <button 
+                onClick={() => setShowChat(!showChat)}
+                className="w-14 h-14 bg-gold rounded-full flex items-center justify-center text-black shadow-lg hover:scale-110 transition-all active:scale-95"
+                title="Negotiate Price"
+              >
+                 <MessageCircle size={24} />
+              </button>
+
               <button 
                 onClick={toggleWishlist}
                 className="w-14 h-14 border border-gray-200 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all active:scale-95"
@@ -231,6 +298,7 @@ const ProductDetails = () => {
               </button>
             </div>
 
+            {/* TRUST MARKERS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center border-t border-gray-100 pt-8">
                <div className="flex flex-col items-center gap-2">
                   <div className="bg-gray-100 p-3 rounded-full"><ShieldCheck size={20} className="text-gold" /></div>
@@ -255,6 +323,64 @@ const ProductDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* --- AI NEGOTIATION CHAT WINDOW --- */}
+      {showChat && (
+        <div className="fixed bottom-6 right-6 w-80 bg-white shadow-2xl rounded-2xl border border-gray-200 overflow-hidden z-[100] animate-fade-in flex flex-col">
+          {/* Header */}
+          <div className="bg-black p-4 text-white flex justify-between items-center">
+            <div className="flex items-center gap-2">
+               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+               <span className="font-bold text-sm tracking-wide">Aabarnam Negotiator</span>
+            </div>
+            <button onClick={() => setShowChat(false)} className="hover:text-gold transition"><X size={18} /></button>
+          </div>
+
+          {/* Messages Area */}
+          <div className="h-64 overflow-y-auto p-4 space-y-3 bg-gray-50 flex flex-col">
+            {chatMessages.map((msg, i) => (
+              <div 
+                key={i} 
+                className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed shadow-sm ${
+                  msg.role === 'bot' 
+                  ? 'bg-white border text-gray-800 self-start rounded-tl-none' 
+                  : 'bg-gold text-black font-bold self-end rounded-tr-none'
+                }`}
+              >
+                {msg.text}
+              </div>
+            ))}
+            {isBargaining && (
+               <div className="self-start bg-white border p-2 rounded-lg text-[10px] animate-pulse">AI is thinking...</div>
+            )}
+          </div>
+
+          {/* Input Area */}
+          <div className="p-3 border-t bg-white flex gap-2 items-center">
+            <div className="relative flex-1">
+               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">₹</span>
+               <input 
+                type="text" // Changed from 'number' to 'text' to allow greetings/sentences
+                value={userBid} 
+                onChange={(e) => setUserBid(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleBargain()}
+                placeholder="Chat with us..." 
+                className="w-full pl-3 pr-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-gold" 
+              />
+            </div>
+            <button 
+              onClick={handleBargain} 
+              disabled={isBargaining || !userBid}
+              className={`p-2.5 rounded-xl transition shadow-md ${!userBid ? 'bg-gray-100 text-gray-400' : 'bg-black text-gold hover:bg-gray-800'}`}
+            >
+               <Send size={18} />
+            </button>
+          </div>
+          <div className="bg-gray-50 px-4 py-2 text-[9px] text-center text-gray-400 border-t">
+             Offers are subject to manager approval. Deal valid for this session only.
+          </div>
+        </div>
+      )}
     </div>
   );
 };
