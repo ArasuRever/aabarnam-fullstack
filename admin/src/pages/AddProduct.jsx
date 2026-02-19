@@ -12,9 +12,10 @@ const AddProduct = () => {
 
   const defaultRow = {
     barcode: '', 
-    image_files: [], // Stores File objects
-    image_previews: [], // Stores URL strings
+    image_files: [], 
+    image_previews: [], 
     name: '',
+    description: '', // <--- NEW: Added Description State
     item_type: 'RING',
     metal_type: '22K_GOLD',
     gross_weight: '',
@@ -30,7 +31,6 @@ const AddProduct = () => {
 
   const [rows, setRows] = useState([defaultRow]);
 
-  // --- HELPER FUNCTIONS ---
   const handleAddNewType = () => {
     const newType = prompt("Enter new Item Type (e.g., ANKLET):");
     if (newType && !itemTypes.includes(newType.toUpperCase())) {
@@ -50,16 +50,13 @@ const AddProduct = () => {
     const metalCode = row.metal_type === '22K_GOLD' ? '22K' : row.metal_type === '24K_GOLD' ? '24K' : 'SLV';
     const typeCode = row.item_type.substring(0, 3).toUpperCase();
     const weightCode = Math.round(parseFloat(row.gross_weight) * 100);
-    return `${metalCode}-${typeCode}-${weightCode}`;
+    const randomHash = Math.random().toString(36).substring(2, 5).toUpperCase(); 
+    return `${metalCode}-${typeCode}-${weightCode}-${randomHash}`;
   };
 
   const addRow = () => setRows([...rows, defaultRow]);
-  
-  const removeRow = (index) => {
-    if (rows.length > 1) setRows(rows.filter((_, i) => i !== index));
-  };
+  const removeRow = (index) => { if (rows.length > 1) setRows(rows.filter((_, i) => i !== index)); };
 
-  // --- IMAGE HANDLING ---
   const handleImageUpload = (index, files) => {
     if (files && files.length > 0) {
       const updatedRows = [...rows];
@@ -86,7 +83,6 @@ const AddProduct = () => {
     setRows(updatedRows);
   };
 
-  // --- SUBMIT ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -104,13 +100,12 @@ const AddProduct = () => {
         formData.append('making_charge_type', row.making_charge_type);
         formData.append('making_charge', row.making_charge);
         formData.append('wastage_pct', row.wastage_pct);
-        formData.append('description', `${row.item_type} - Premium jewelry piece.`);
         
-        // Append Multiple Images
+        // NEW: Now sends the custom description, with a fallback if left empty
+        formData.append('description', row.description || `Experience the elegance of this handcrafted ${row.item_type.toLowerCase()}. Made with precision and care, this piece features authentic ${row.metal_type.replace('_', ' ')} and is perfect for both daily wear and special occasions.`);
+        
         if (row.image_files && row.image_files.length > 0) {
-            row.image_files.forEach(file => {
-                formData.append('images', file);
-            });
+            row.image_files.forEach(file => { formData.append('images', file); });
         }
 
         return axios.post('http://localhost:5000/api/products', formData, {
@@ -123,7 +118,7 @@ const AddProduct = () => {
       navigate('/products');
     } catch (err) {
       console.error(err);
-      alert('Error saving products. Check console.');
+      alert('Error saving products. Duplicate SKU detected or missing data.');
     } finally {
       setSaving(false);
     }
@@ -148,9 +143,9 @@ const AddProduct = () => {
           <table className="w-full text-left border-collapse min-w-[1400px]">
             <thead>
               <tr className="bg-gray-100 border-b">
-                <th className="p-3 text-sm font-bold text-gray-700 w-64">Photos (Select Multiple)</th>
-                <th className="p-3 text-sm font-bold text-gray-700">Type / Name</th>
-                <th className="p-3 text-sm font-bold text-gray-700">Auto-Barcode</th>
+                <th className="p-3 text-sm font-bold text-gray-700 w-64">Photos</th>
+                <th className="p-3 text-sm font-bold text-gray-700 w-64">Item Details</th> {/* Widened column for description */}
+                <th className="p-3 text-sm font-bold text-gray-700">Barcode / SKU</th>
                 <th className="p-3 text-sm">Metal</th>
                 <th className="p-3 text-sm">Weights (g)</th>
                 <th className="p-3 text-sm bg-blue-50 text-blue-800">Pricing</th>
@@ -184,14 +179,29 @@ const AddProduct = () => {
                       placeholder="Name..." 
                       value={row.name} 
                       onChange={(e) => handleChange(index, 'name', e.target.value)} 
-                      className="w-full p-2 border rounded text-sm" 
+                      className="w-full p-2 border rounded text-sm font-bold" 
                     />
                     <datalist id={`names-${index}`}>
                       {commonNames.map(name => <option key={name} value={name} />)}
                     </datalist>
+                    {/* NEW: Description Input Field */}
+                    <textarea 
+                      placeholder="Custom description (optional)" 
+                      value={row.description} 
+                      onChange={(e) => handleChange(index, 'description', e.target.value)} 
+                      className="w-full p-2 border rounded text-xs text-gray-600 bg-gray-50 outline-none focus:bg-white"
+                      rows="2"
+                    ></textarea>
                   </td>
 
-                  <td className="p-2"><input readOnly value={row.barcode} className="w-full p-2 bg-gray-200 border rounded text-xs font-mono font-bold" /></td>
+                  <td className="p-2">
+                    <input 
+                      value={row.barcode} 
+                      onChange={(e) => handleChange(index, 'barcode', e.target.value)} 
+                      className="w-full p-2 bg-white border rounded text-xs font-mono font-bold focus:ring-2 focus:ring-blue-500" 
+                      placeholder="SKU"
+                    />
+                  </td>
                   
                   <td className="p-2">
                     <select value={row.metal_type} onChange={(e) => handleChange(index, 'metal_type', e.target.value)} className="w-full p-2 border rounded text-xs">

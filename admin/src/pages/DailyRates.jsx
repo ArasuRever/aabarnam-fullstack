@@ -1,146 +1,247 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Activity, RefreshCw, TrendingUp, TrendingDown, Settings, ShieldCheck, Save, Edit2 } from 'lucide-react';
+import toast, { Toaster } from 'react-hot-toast';
 
 const DailyRates = () => {
   const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  
+  // Controls State
+  const [syncing, setSyncing] = useState(false);
+  const [savingManual, setSavingManual] = useState(false);
+  
+  // Configuration State
+  const [premium, setPremium] = useState(3.0); 
+  const [intervalHrs, setIntervalHrs] = useState(1);
 
-  // Fetch Rates
-  const fetchRates = async () => {
+  const fetchData = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/rates');
-      setRates(response.data);
-      if (response.data.length > 0) {
-        setLastUpdated(response.data[0].updated_at);
-      }
+      const [ratesRes, configRes] = await Promise.all([
+         axios.get('http://localhost:5000/api/rates'),
+         axios.get('http://localhost:5000/api/rates/config')
+      ]);
+      setRates(ratesRes.data);
+      setIntervalHrs(configRes.data.interval);
+      setPremium(configRes.data.premium);
       setLoading(false);
-    } catch (error) {
-      console.error('Error fetching rates:', error);
+    } catch (err) {
+      toast.error('Failed to load market data');
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchRates();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
-  const handleRateChange = (metalType, newRate) => {
-    setRates(rates.map(rate => 
-      rate.metal_type === metalType ? { ...rate, rate_per_gram: newRate } : rate
-    ));
+  // Save Automation Settings
+  const handleSaveConfig = async () => {
+    const toastId = toast.loading('Updating background timer...');
+    try {
+      await axios.post('http://localhost:5000/api/rates/config', { 
+         interval: intervalHrs, 
+         premium: premium 
+      });
+      toast.success('Automation rules updated!', { id: toastId });
+    } catch (err) {
+      toast.error('Failed to save settings.', { id: toastId });
+    }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    setSaving(true);
+  // Immediate API Sync
+  const handleSync = async () => {
+    setSyncing(true);
+    const toastId = toast.loading('Connecting to Global Markets...');
     try {
-      await axios.put('http://localhost:5000/api/rates', { rates });
-      alert('Market Rates Updated! All inventory prices have been adjusted. 📈');
-      fetchRates(); // Refresh to calculate new trends
-    } catch (error) {
-      alert('Failed to update rates.');
+      await axios.post('http://localhost:5000/api/rates/sync', { premium });
+      await fetchData(); // Refresh table
+      toast.success('Rates synced successfully!', { id: toastId });
+    } catch (err) {
+      toast.error('Sync failed. Please try again.', { id: toastId });
     } finally {
-      setSaving(false);
+      setSyncing(false);
     }
   };
 
-  // Helper to render trend badge
-  const renderTrend = (current, previous) => {
-    const diff = current - previous;
-    if (diff > 0) return <span className="text-green-500 text-xs font-bold flex items-center">▲ +₹{diff.toFixed(2)}</span>;
-    if (diff < 0) return <span className="text-red-500 text-xs font-bold flex items-center">▼ -₹{Math.abs(diff).toFixed(2)}</span>;
-    return <span className="text-gray-400 text-xs font-bold flex items-center">- No Change</span>;
+  // Handle Manual Typing
+  const handleRateChange = (index, newValue) => {
+    const updatedRates = [...rates];
+    updatedRates[index].rate_per_gram = newValue;
+    setRates(updatedRates);
   };
 
-  if (loading) return <div className="p-12 text-center text-gray-500 font-bold">Connecting to Market...</div>;
+  // Save Manual Edits
+  const handleManualSave = async () => {
+    setSavingManual(true);
+    const toastId = toast.loading('Locking in custom rates...');
+    
+    const payloadRates = {};
+    rates.forEach(r => { payloadRates[r.metal_type] = r.rate_per_gram; });
+
+    try {
+      await axios.post('http://localhost:5000/api/rates', { rates: payloadRates });
+      await fetchData();
+      toast.success('Custom rates locked & storefront updated!', { id: toastId });
+    } catch (err) {
+      toast.error('Failed to save manual rates.', { id: toastId });
+    } finally {
+      setSavingManual(false);
+    }
+  };
+
+  const getTrendIcon = (current, previous) => {
+    if (!previous || parseFloat(current) === parseFloat(previous)) return <span className="text-gray-400 font-bold">-</span>;
+    if (parseFloat(current) > parseFloat(previous)) return <TrendingUp size={16} className="text-red-500" />;
+    return <TrendingDown size={16} className="text-green-500" />;
+  };
+
+  if (loading) return <div className="p-10 font-bold text-gray-400">Loading Market Data...</div>;
+
+  const lastUpdated = rates.length > 0 ? new Date(rates[0].updated_at).toLocaleString() : 'Never';
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Daily Market Rates</h1>
-        <p className="text-gray-500">Set today's gold and silver prices. Updates reflect instantly across the platform.</p>
+    <div className="p-4 sm:p-8 animate-fade-in max-w-5xl mx-auto">
+      <Toaster position="top-right" />
+      
+      {/* HEADER SECTION */}
+      <div className="bg-gray-900 rounded-2xl p-8 mb-8 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-12 opacity-10"><Activity size={200} /></div>
+        
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+          <div>
+            <h1 className="text-3xl font-serif font-bold text-gold mb-2 flex items-center gap-3">
+              <Activity /> Market Engine
+            </h1>
+            <p className="text-gray-400 text-sm max-w-xl leading-relaxed">
+              Sync automatically with the global market, configure background intervals, or manually override rates based on local wholesale pricing.
+            </p>
+          </div>
+
+          <div className="bg-black/50 p-4 rounded-xl border border-gray-700 backdrop-blur-md text-right">
+             <p className="text-xs text-gray-500 uppercase tracking-widest font-bold mb-1">Last Updated</p>
+             <p className="text-sm font-mono text-green-400">{lastUpdated}</p>
+             <p className="text-[10px] text-gray-400 mt-1">
+                Auto-Sync: {intervalHrs === 0 ? '⏸️ Paused' : `Every ${intervalHrs} hr(s)`}
+             </p>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        {/* CONTROL PANEL */}
-        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-           <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-800">Set Today's Rates</h2>
-              <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500">
-                Last Update: {lastUpdated ? new Date(lastUpdated).toLocaleDateString() : 'N/A'}
-              </span>
-           </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+         
+         {/* LEFT CONTROL PANEL (AUTOMATION SYNC) */}
+         <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+               <h3 className="font-bold text-gray-900 border-b pb-3 mb-4 flex items-center gap-2">
+                 <Settings size={18} className="text-gold" /> Automation Config
+               </h3>
+               
+               <div className="mb-4">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Retail Premium (%)</label>
+                  <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-2 focus-within:border-gold transition">
+                     <span className="text-gray-400 px-3">+</span>
+                     <input 
+                        type="number" step="0.1" 
+                        value={premium} 
+                        onChange={(e) => setPremium(parseFloat(e.target.value))} 
+                        className="w-full bg-transparent font-bold text-lg text-gray-900 outline-none" 
+                     />
+                     <span className="text-gray-400 px-3">%</span>
+                  </div>
+               </div>
 
-           <form onSubmit={handleSave} className="space-y-6">
-              {rates.map((rate) => (
-                <div key={rate.metal_type} className="p-4 bg-gray-50 rounded-lg border border-gray-100 hover:border-blue-200 transition">
-                   <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="block text-xs font-bold text-gray-400 uppercase tracking-wider">{rate.metal_type.replace('_', ' ')}</span>
-                        <div className="mt-1">{renderTrend(rate.rate_per_gram, rate.previous_rate)}</div>
-                      </div>
-                      <div className="flex items-center">
-                        <span className="text-xl font-bold text-gray-400 mr-2">₹</span>
-                        <input
-                            type="number"
-                            step="0.01"
-                            value={rate.rate_per_gram}
-                            onChange={(e) => handleRateChange(rate.metal_type, e.target.value)}
-                            className="w-32 text-right text-2xl font-bold bg-transparent border-b-2 border-gray-300 focus:border-black outline-none transition-colors"
-                        />
-                      </div>
-                   </div>
-                   <div className="text-right text-xs text-gray-400 font-mono">
-                      Prev: ₹{rate.previous_rate}
-                   </div>
-                </div>
-              ))}
+               <div className="mb-6">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Background Timer</label>
+                  <select 
+                     value={intervalHrs} 
+                     onChange={(e) => setIntervalHrs(parseFloat(e.target.value))} 
+                     className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 outline-none font-bold text-gray-800 focus:border-gold transition"
+                  >
+                     <option value={0}>⏸️ Disabled (Manual Only)</option>
+                     <option value={1}>⏱️ Every 1 Hour</option>
+                     <option value={3}>⏱️ Every 3 Hours</option>
+                     <option value={6}>⏱️ Every 6 Hours</option>
+                     <option value={12}>⏱️ Every 12 Hours</option>
+                     <option value={24}>⏱️ Every 24 Hours</option>
+                  </select>
+               </div>
 
-              <button
-                type="submit"
-                disabled={saving}
-                className={`w-full py-4 rounded-lg font-bold text-lg shadow-md transition-all ${
-                    saving 
-                    ? 'bg-gray-400 cursor-not-allowed' 
-                    : 'bg-black text-gold hover:bg-gray-800 hover:scale-[1.02]'
-                }`}
-              >
-                {saving ? 'Broadcasting Prices...' : 'UPDATE LIVE PRICES'}
-              </button>
-           </form>
-        </div>
-
-        {/* INFO WIDGET */}
-        <div className="space-y-6">
-            <div className="bg-blue-900 text-white p-6 rounded-xl shadow-lg">
-                <h3 className="text-gold font-bold text-lg mb-2">📢 System Impact</h3>
-                <p className="text-blue-100 text-sm leading-relaxed mb-4">
-                    Changing these rates will immediately recalculate the prices of all items in your <strong>Inventory Lookbook</strong>.
-                </p>
-                <div className="bg-blue-800/50 p-3 rounded-lg text-xs font-mono">
-                    Example: A 10g Chain <br/>
-                    Old Rate (₹6500) = ₹65,000 <br/>
-                    New Rate (₹6600) = <span className="text-green-300 font-bold">₹66,000</span>
-                </div>
+               <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={handleSaveConfig} 
+                    className="w-full bg-gray-100 text-gray-800 py-3 rounded-xl font-bold text-sm hover:bg-gray-200 transition border border-gray-200"
+                  >
+                    Save Rules
+                  </button>
+                  <button 
+                    onClick={handleSync} 
+                    disabled={syncing}
+                    className="w-full bg-black text-gold py-3 rounded-xl font-bold text-sm hover:bg-gray-800 transition flex items-center justify-center gap-2 disabled:opacity-70"
+                  >
+                    <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> 
+                    {syncing ? 'Fetching...' : 'Force Sync Now'}
+                  </button>
+               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-800 mb-4">Quick Stats</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="p-3 bg-yellow-50 rounded border border-yellow-100">
-                        <span className="block text-xs text-gray-500 uppercase">Gold Trend</span>
-                        <span className="font-bold text-yellow-700">Bullish ▲</span>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded border border-gray-100">
-                        <span className="block text-xs text-gray-500 uppercase">Silver Trend</span>
-                        <span className="font-bold text-gray-700">Stable -</span>
-                    </div>
-                </div>
+            <div className="bg-blue-50/50 rounded-xl border border-blue-100 p-5 text-sm text-blue-800 leading-relaxed">
+               <ShieldCheck size={20} className="text-blue-600 mb-2" />
+               If <strong>Background Timer</strong> is enabled, the server will fetch prices automatically even when you are offline.
             </div>
-        </div>
+         </div>
+
+         {/* RIGHT LIVE RATES BOARD (EDITABLE) */}
+         <div className="lg:col-span-2">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
+               
+               <div className="bg-gray-50 p-4 border-b border-gray-100 flex justify-between items-center">
+                  <span className="font-bold text-gray-700 uppercase text-xs tracking-widest flex items-center gap-2">
+                      <Edit2 size={14} className="text-gray-400"/> Active Storefront Rates
+                  </span>
+                  <button 
+                     onClick={handleManualSave}
+                     disabled={savingManual}
+                     className="bg-gold text-black px-4 py-2 rounded-lg text-xs font-bold hover:bg-yellow-500 transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                  >
+                     <Save size={14}/> {savingManual ? 'Saving...' : 'Save Overrides'}
+                  </button>
+               </div>
+               
+               <div className="divide-y divide-gray-100 flex-1">
+                  {rates.map((rate, index) => (
+                    <div key={rate.metal_type} className="p-6 flex items-center justify-between hover:bg-gray-50/50 transition">
+                       <div>
+                          <div className="flex items-center gap-3 mb-1">
+                             <h4 className="text-lg font-bold text-gray-900">
+                                {rate.metal_type.replace('_', ' ')}
+                             </h4>
+                             {rate.metal_type === '22K_GOLD' && <span className="bg-gold/20 text-gold-dark text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-widest">Best Seller</span>}
+                          </div>
+                          <p className="text-xs text-gray-400 font-mono">Prev: ₹{parseFloat(rate.previous_rate || rate.rate_per_gram).toFixed(2)}</p>
+                       </div>
+                       
+                       <div className="flex items-center gap-4">
+                          {getTrendIcon(rate.rate_per_gram, rate.previous_rate)}
+                          
+                          <div className="relative">
+                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold">₹</span>
+                             <input 
+                                type="number" 
+                                step="0.01"
+                                value={rate.rate_per_gram}
+                                onChange={(e) => handleRateChange(index, e.target.value)}
+                                className="w-36 pl-8 pr-4 py-3 bg-white border-2 border-gray-200 rounded-lg font-mono font-bold text-lg text-gray-900 focus:border-gold focus:ring-0 outline-none transition text-right shadow-sm"
+                             />
+                          </div>
+                       </div>
+                    </div>
+                  ))}
+                  
+                  {rates.length === 0 && !loading && (
+                      <div className="p-10 text-center text-gray-500">No rates configured. Click Force Sync.</div>
+                  )}
+               </div>
+            </div>
+         </div>
 
       </div>
     </div>

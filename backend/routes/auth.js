@@ -101,7 +101,22 @@ router.post('/addresses', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error adding address' }); }
 });
 
-// 5. DELETE /api/auth/addresses/:id - Remove an address
+// [NEW] 5. PUT /api/auth/addresses/:id - Edit an existing address
+router.put('/addresses/:id', async (req, res) => {
+    const { full_name, phone, address, city, pincode } = req.body;
+    try {
+        await pool.query(
+            'UPDATE user_addresses SET full_name = $1, phone = $2, address = $3, city = $4, pincode = $5 WHERE id = $6',
+            [full_name, phone, address, city, pincode, req.params.id]
+        );
+        res.json({ message: 'Address updated successfully' });
+    } catch (err) { 
+        console.error(err);
+        res.status(500).json({ error: 'Server error updating address' }); 
+    }
+});
+
+// 6. DELETE /api/auth/addresses/:id - Remove an address (Existing)
 router.delete('/addresses/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM user_addresses WHERE id = $1', [req.params.id]);
@@ -109,7 +124,7 @@ router.delete('/addresses/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// 6. TEMPORARY ADMIN CREATION ROUTE (Guaranteed to work)
+// 7. TEMPORARY ADMIN CREATION ROUTE (Guaranteed to work)
 router.get('/create-admin', async (req, res) => {
     try {
         const salt = await bcrypt.genSalt(10);

@@ -1,10 +1,11 @@
 Based on the backendroutesauth.js file in your repository, there is a temporary auto-create route specifically for your admin account.
 
 The backend admin login credentials are
+to reset admin credentials visit http://localhost:5000
 
-Email arasu@aabarnam.com
+Email admin@aabarnam.com
 
-Password SecurePassword123!
+Password  SecurePassword123!
 
 Note If you haven't initialized this account in your database yet, you just need to visit httplocalhost5000apiauthcreate-admin in your browser once. This will automatically generate your admin profile, and you can then log in using the credentials above.
 

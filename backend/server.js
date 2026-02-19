@@ -32,6 +32,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const ordersRoutes = require('./routes/orders');
 const usersRoutes = require('./routes/users');       // NEW
 const wishlistRoutes = require('./routes/wishlist'); // NEW
+const bargainRoutes = require('./routes/bargain');
 
 app.use('/api/rates', ratesRoutes);
 app.use('/api/products', productsRoutes);
@@ -41,6 +42,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/users', usersRoutes);       // NEW
 app.use('/api/wishlist', wishlistRoutes); // NEW
+app.use('/api/bargain', bargainRoutes);
 
 app.get('/', (req, res) => {
     res.send('Aabarnam Backend API is running!');

@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast'; // <--- ADDED Toaster
+import { Toaster } from 'react-hot-toast';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import ProductDetails from './pages/ProductDetails';
@@ -8,7 +8,8 @@ import Cart from './pages/Cart';
 import Catalog from './pages/Catalog';
 import Checkout from './pages/Checkout';
 import Auth from './pages/Auth';
-import Wishlist from './pages/Wishlist'; // <--- ADDED Wishlist
+import Account from './pages/Account'; // <--- BROUGHT THIS BACK!
+import Wishlist from './pages/Wishlist'; 
 
 function App() {
   return (
@@ -24,7 +25,8 @@ function App() {
           <Route path="/collections/:category" element={<Catalog />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/auth" element={<Auth />} />
-          <Route path="/wishlist" element={<Wishlist />} /> {/* NEW */}
+          <Route path="/account" element={<Account />} /> {/* <--- BROUGHT THIS BACK! */}
+          <Route path="/wishlist" element={<Wishlist />} /> 
         </Routes>
       </div>
     </Router>
