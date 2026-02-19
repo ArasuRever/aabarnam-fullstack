@@ -30,7 +30,7 @@ const ProductDetails = () => {
   const [isBargaining, setIsBargaining] = useState(false);
   const [negotiatedPrice, setNegotiatedPrice] = useState(null);
   const [chatMessages, setChatMessages] = useState([
-    { role: 'bot', text: 'Namaste! I am the manager here. This piece is exquisite. Would you like to discuss the price?' }
+    { sender: 'bot', text: 'Namaste! I am the manager here. This piece is exquisite. Would you like to discuss the price?' }
   ]);
 
   useEffect(() => {
@@ -48,21 +48,29 @@ const ProductDetails = () => {
     fetchProduct();
   }, [id]);
 
-  // AI Negotiation Logic
+  // --- UPGRADED AI NEGOTIATION LOGIC (NOW WITH MEMORY) ---
   const handleBargain = async () => {
     if (!userBid.trim()) return;
+    
+    // Clean up input and add the user's message to the chat history locally
     const currentInput = userBid;
+    const newUserMsg = { sender: 'user', text: currentInput };
+    
+    const updatedHistory = [...chatMessages, newUserMsg];
+    setChatMessages(updatedHistory);
     setUserBid('');
     setIsBargaining(true);
-    setChatMessages(prev => [...prev, { role: 'user', text: currentInput }]);
 
     try {
+        // Send the complete updated history to the backend so the AI remembers past offers
         const res = await axios.post('http://localhost:5000/api/bargain', { 
             product_id: id, 
-            user_bid: currentInput 
+            user_bid: currentInput,
+            chat_history: updatedHistory 
         });
         
-        setChatMessages(prev => [...prev, { role: 'bot', text: res.data.response_message }]);
+        // Add the bot's response to the chat
+        setChatMessages(prev => [...prev, { sender: 'bot', text: res.data.response_message }]);
         
         if (res.data.status === 'accepted') {
             setNegotiatedPrice(res.data.counter_offer);
@@ -318,13 +326,12 @@ const ProductDetails = () => {
         </div>
       </div>
 
-      {/* --- SCALABLE AI CHAT WINDOW (Resize handle on Left) --- */}
+      {/* --- SCALABLE AI CHAT WINDOW --- */}
       {showChat && (
         <div 
           className="fixed bottom-6 right-6 min-w-[320px] max-w-[600px] w-80 bg-white shadow-2xl rounded-2xl border border-gray-200 overflow-hidden z-[100] animate-fade-in flex flex-col resize"
           style={{ height: '450px', direction: 'rtl' }}
         >
-          {/* Internal content set back to LTR for normal text reading */}
           <div className="flex flex-col h-full w-full" style={{ direction: 'ltr' }}>
             <div className="bg-black p-4 text-white flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -339,7 +346,7 @@ const ProductDetails = () => {
                 <div 
                   key={i} 
                   className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed shadow-sm ${
-                    msg.role === 'bot' 
+                    msg.sender === 'bot' 
                     ? 'bg-white border text-gray-800 self-start rounded-tl-none' 
                     : 'bg-gold text-black font-bold self-end rounded-tr-none'
                   }`}
@@ -348,11 +355,10 @@ const ProductDetails = () => {
                 </div>
               ))}
               {isBargaining && (
-                 <div className="self-start bg-white border p-2 rounded-lg text-[10px] animate-pulse">AI is thinking...</div>
+                 <div className="self-start bg-white border p-2 rounded-lg text-[10px] animate-pulse">Manager is calculating...</div>
               )}
             </div>
 
-            {/* Input Area - Fixed padding-left to prevent symbol overlap */}
             <div className="p-3 border-t bg-white flex gap-2 items-center">
               <div className="relative flex-1">
                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm z-10 pointer-events-none">₹</span>
@@ -361,7 +367,7 @@ const ProductDetails = () => {
                    value={userBid} 
                    onChange={(e) => setUserBid(e.target.value)}
                    onKeyDown={(e) => { if (e.key === 'Enter') handleBargain(); }}
-                   placeholder="Type your offer or greet..." 
+                   placeholder="Type your offer..." 
                    className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white" 
                  />
               </div>
@@ -374,7 +380,7 @@ const ProductDetails = () => {
               </button>
             </div>
             <div className="bg-gray-50 px-4 py-2 text-[9px] text-center text-gray-400 border-t">
-               Offers are subject to manager approval. Deal valid for this session only.
+               Offers subject to manager approval. Deal valid for this session only.
             </div>
           </div>
         </div>
