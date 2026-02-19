@@ -15,10 +15,12 @@ router.post('/', async (req, res) => {
     const { product_id, user_bid } = req.body;
     
     try {
+        // 1. Fetch Product Data
         const prodRes = await pool.query('SELECT * FROM products WHERE id = $1', [product_id]);
         if(prodRes.rows.length === 0) return res.status(404).json({error: "Product not found"});
         const product = prodRes.rows[0];
 
+        // 2. Fetch Live Rates
         const rawMetalToFetch = product.metal_type.includes('GOLD') ? '24K_GOLD' : 'SILVER';
         const rateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [rawMetalToFetch]);
         const retailRateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [product.metal_type]);
@@ -26,6 +28,7 @@ router.post('/', async (req, res) => {
         const rawRate = rateRes.rows.length > 0 ? parseFloat(rateRes.rows[0].rate_per_gram) : 0;
         const retailRate = retailRateRes.rows.length > 0 ? parseFloat(retailRateRes.rows[0].rate_per_gram) : 0;
 
+        // 3. Mathematical Calculations
         const pureWeight = parseFloat(product.gross_weight) * (parseFloat(product.purchase_touch_pct || 91.6) / 100);
         const wholesaleCost = (pureWeight * rawRate) + parseFloat(product.purchase_mc || 0);
         
@@ -38,6 +41,7 @@ router.post('/', async (req, res) => {
         const listedPrice = (subtotal + (subtotal * 0.03)).toFixed(2); 
         const absoluteMinimum = (wholesaleCost * 1.05).toFixed(2); 
 
+        // 4. Gemini AI Integration Setup
         const apiKey = process.env.GEMINI_API_KEY;
 
         const systemPrompt = `You are 'Aabarnam Bot', a sophisticated, polite Indian jewelry salesperson.
@@ -45,56 +49,59 @@ Context:
 - Product: ${product.name}
 - Listed Retail Price: ₹${listedPrice}
 - Your Hidden Floor Price: ₹${absoluteMinimum}
-- Customer Input: "${user_bid}"
 
 Instructions:
-1. GREETINGS: If the user says "Hi", "Hello", or "Namaste", respond warmly and ask how you can help. Status: "negotiating", counter_offer: ${listedPrice}.
+1. GREETINGS: If the user says "Hi", "Hello", or "Namaste", respond warmly and ask for their offer. Status: "negotiating", counter_offer: ${listedPrice}.
 2. OVER-BIDDING: If user offers MORE than ₹${listedPrice}, politely explain the price is only ₹${listedPrice} and accept at that.
 3. NEGOTIATION: If they offer less than ₹${absoluteMinimum}, explain craftsmanship and purity costs, and make a counter-offer above floor.
-4. If the offer is between ₹${absoluteMinimum} and ₹${listedPrice}, you can accept or try to get ₹500 more for profit.
-5. RETURN ONLY RAW JSON. DO NOT INCLUDE MARKDOWN, BACKTICKS, OR EXPLANATIONS.
+4. ACCEPTANCE: If the offer is between ₹${absoluteMinimum} and ₹${listedPrice}, you can accept or try to get slightly more for profit.
+5. You must output VALID JSON matching the schema perfectly. No markdown formatting.`;
 
-Schema:
-{
-  "response_message": "string",
-  "status": "negotiating" | "accepted",
-  "counter_offer": number
-}`;
-
-        let aiResponseText = "";
-
+        // Attempt Gemini API Call using the highly stable 'latest' endpoint
         try {
-            // ATTEMPT 1: Try the v1 gemini-1.5-flash model
-            const primaryUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-            const primaryRes = await axios.post(primaryUrl, {
-                contents: [{ parts: [{ text: systemPrompt }] }],
-                generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
-            });
-            aiResponseText = primaryRes.data.candidates[0].content.parts[0].text;
+            if (!apiKey) throw new Error("Missing API Key");
+
+            const aiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
             
-        } catch (primaryErr) {
-            // ATTEMPT 2: If 1.5-flash is not found (404), fallback to the universally available gemini-pro
-            if (primaryErr.response && primaryErr.response.status === 404) {
-                console.log("gemini-1.5-flash not found for this key. Falling back to gemini-pro...");
-                const fallbackUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`;
-                const fallbackRes = await axios.post(fallbackUrl, {
-                    contents: [{ parts: [{ text: systemPrompt }] }],
-                    generationConfig: { temperature: 0.7 } // gemini-pro doesn't support responseMimeType
-                });
-                aiResponseText = fallbackRes.data.candidates[0].content.parts[0].text;
+            const payload = {
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                contents: [{ parts: [{ text: `Customer Input: "${user_bid}"` }] }],
+                generationConfig: { 
+                    temperature: 0.7,
+                    responseMimeType: "application/json" // Forces 100% perfect JSON response
+                }
+            };
+
+            const aiRes = await axios.post(aiUrl, payload, {
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            let aiResponseText = aiRes.data.candidates[0].content.parts[0].text;
+            
+            // Clean just in case the AI ignored the MIME type instruction
+            const cleanedJson = aiResponseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+            return res.json(JSON.parse(cleanedJson));
+
+        } catch (apiErr) {
+            console.warn("Gemini API skipped or failed. Using Local Math Fallback Engine.", apiErr.message);
+            
+            // INDESTRUCTIBLE FALLBACK ENGINE: If API fails, auto-negotiate using local math!
+            const userOffer = parseFloat(user_bid.replace(/[^0-9.]/g, '')) || 0;
+            
+            if (userOffer >= parseFloat(listedPrice)) {
+                return res.json({ response_message: `I am happy to offer this to you for our listed price of ₹${listedPrice}!`, status: "accepted", counter_offer: listedPrice });
+            } else if (userOffer >= parseFloat(absoluteMinimum)) {
+                return res.json({ response_message: `That's a fair offer. I can agree to ₹${userOffer}. Let's lock it in!`, status: "accepted", counter_offer: userOffer });
             } else {
-                throw primaryErr; // Throw other errors (like 403 API Key invalid) to the outer catch
+                // Generate a counter-offer halfway between their bid and the listed price, ensuring it's above minimum
+                const counter = Math.max(parseFloat(absoluteMinimum), (parseFloat(listedPrice) + userOffer) / 2).toFixed(2);
+                return res.json({ response_message: `Given the purity and craftsmanship, I cannot go that low. My best price for you is ₹${counter}.`, status: "negotiating", counter_offer: parseFloat(counter) });
             }
         }
 
-        // AGGRESSIVE SANITIZATION: Removes any markdown blocks to guarantee JSON.parse works
-        const cleanedJson = aiResponseText.replace(/```json/gi, '').replace(/```/g, '').trim();
-        
-        res.json(JSON.parse(cleanedJson));
-
     } catch (err) {
-        console.error("Negotiation Error Details:", err.response?.data || err.message);
-        res.status(500).json({ error: "Bargain engine error" });
+        console.error("Critical Negotiation Error:", err.message);
+        res.status(500).json({ error: "Bargain engine encountered a critical error" });
     }
 });
 
