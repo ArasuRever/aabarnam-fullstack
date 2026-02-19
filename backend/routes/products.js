@@ -15,25 +15,6 @@ const pool = new Pool({
     database: process.env.DB_NAME,
 });
 
-// --- HELPER: Calculate Prices ---
-const calculatePrice = (product, metalRate) => {
-    const netWeight = parseFloat(product.net_weight);
-    const makingCharge = parseFloat(product.making_charge);
-    const wastagePct = parseFloat(product.wastage_pct);
-    
-    const rawMetalValue = netWeight * metalRate;
-    const wastageValue = (rawMetalValue * wastagePct) / 100;
-    
-    let actualMakingCharge = makingCharge;
-    if (product.making_charge_type === 'PERCENTAGE') {
-        actualMakingCharge = (rawMetalValue * makingCharge) / 100;
-    }
-
-    const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
-    const gstAmount = subtotal * 0.03;
-    return (subtotal + gstAmount).toFixed(2);
-};
-
 // 1. GET ALL PRODUCTS (List View)
 router.get('/', async (req, res) => {
     try {
@@ -45,9 +26,22 @@ router.get('/', async (req, res) => {
 
         const products = productsResult.rows.map(product => {
             const metalRate = liveRates[product.metal_type] || 0;
-            const finalPrice = calculatePrice(product, metalRate);
+            const netWeight = parseFloat(product.net_weight);
+            const makingCharge = parseFloat(product.making_charge);
+            const wastagePct = parseFloat(product.wastage_pct);
+            
+            const rawMetalValue = netWeight * metalRate;
+            const wastageValue = (rawMetalValue * wastagePct) / 100;
+            
+            let actualMakingCharge = makingCharge;
+            if (product.making_charge_type === 'PERCENTAGE') {
+                actualMakingCharge = (rawMetalValue * makingCharge) / 100;
+            }
 
-            // Main Image to Base64
+            const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
+            const gstAmount = subtotal * 0.03;
+            const finalPrice = (subtotal + gstAmount).toFixed(2);
+
             let mainImage = null;
             if (product.main_image_url) {
                 mainImage = `data:image/jpeg;base64,${product.main_image_url.toString('base64')}`;
@@ -67,7 +61,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// 2. POST NEW PRODUCT (With Multiple Images)
+// 2. POST NEW PRODUCT (With Multiple Images & Duplicate SKU fix)
 router.post('/', upload.array('images'), async (req, res) => {
     const client = await pool.connect();
     try {
@@ -92,7 +86,6 @@ router.post('/', upload.array('images'), async (req, res) => {
         ]);
         const productId = productRes.rows[0].id;
 
-        // Save all images to gallery table as well (or just remaining ones)
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
                 await client.query('INSERT INTO product_images (product_id, image_data) VALUES ($1, $2)', [productId, file.buffer]);
@@ -103,6 +96,9 @@ router.post('/', upload.array('images'), async (req, res) => {
         res.json({ message: "Product saved", productId });
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.code === '23505') { // Duplicate SKU constraint
+            return res.status(400).json({ error: `A product with SKU "${req.body.sku}" already exists.` });
+        }
         console.error(err);
         res.status(500).json({ error: 'Save error' });
     } finally {
@@ -110,37 +106,22 @@ router.post('/', upload.array('images'), async (req, res) => {
     }
 });
 
-// 3. PUT UPDATE PRODUCT (Edit Text + Images)
+// 3. PUT UPDATE PRODUCT
 router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'new_gallery_images' }]), async (req, res) => {
     const { id } = req.params;
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
-        
-        const { 
-            name, item_type, metal_type, gross_weight, 
-            net_weight, wastage_pct, making_charge, deleted_gallery_ids 
-        } = req.body;
+        const { name, item_type, metal_type, gross_weight, net_weight, wastage_pct, making_charge, deleted_gallery_ids } = req.body;
 
-        // 1. Update Text Fields
-        let updateQuery = `
-            UPDATE products SET 
-            name=$1, item_type=$2, metal_type=$3, gross_weight=$4, 
-            net_weight=$5, wastage_pct=$6, making_charge=$7 
-            WHERE id=$8`;
-        
-        await client.query(updateQuery, [
-            name, item_type, metal_type, gross_weight, 
-            net_weight, wastage_pct, making_charge, id
-        ]);
+        let updateQuery = `UPDATE products SET name=$1, item_type=$2, metal_type=$3, gross_weight=$4, net_weight=$5, wastage_pct=$6, making_charge=$7 WHERE id=$8`;
+        await client.query(updateQuery, [name, item_type, metal_type, gross_weight, net_weight, wastage_pct, making_charge, id]);
 
-        // 2. Update Thumbnail if provided
         if (req.files['thumbnail']) {
             await client.query('UPDATE products SET main_image_url=$1 WHERE id=$2', [req.files['thumbnail'][0].buffer, id]);
         }
 
-        // 3. Delete Removed Gallery Images
         if (deleted_gallery_ids) {
             const idsToDelete = JSON.parse(deleted_gallery_ids); 
             if (idsToDelete.length > 0) {
@@ -148,7 +129,6 @@ router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'n
             }
         }
 
-        // 4. Insert New Gallery Images
         if (req.files['new_gallery_images']) {
             for (const file of req.files['new_gallery_images']) {
                 await client.query('INSERT INTO product_images (product_id, image_data) VALUES ($1, $2)', [id, file.buffer]);
@@ -174,7 +154,7 @@ router.delete('/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Delete error' }); }
 });
 
-// 5. GET /api/products/:id - Fetch Single Product (Used by ProductDetails and Cart)
+// 5. GET /api/products/:id - Fetch Single Product (Includes Detailed Price Breakdown)
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -186,12 +166,10 @@ router.get('/:id', async (req, res) => {
 
         const product = productRes.rows[0];
 
-        // Fetch Live Rates
         const ratesResult = await pool.query('SELECT metal_type, rate_per_gram FROM metal_rates');
         const liveRates = {};
         ratesResult.rows.forEach(r => liveRates[r.metal_type] = parseFloat(r.rate_per_gram));
 
-        // Calculate Price
         const metalRate = liveRates[product.metal_type] || 0;
         const netWeight = parseFloat(product.net_weight);
         const makingCharge = parseFloat(product.making_charge);
@@ -209,13 +187,11 @@ router.get('/:id', async (req, res) => {
         const gstAmount = subtotal * 0.03;
         const finalPrice = subtotal + gstAmount;
 
-        // Convert Images to Base64
         let mainImage = null;
         if (product.main_image_url) {
             mainImage = `data:image/jpeg;base64,${product.main_image_url.toString('base64')}`;
         }
 
-        // Fetch Gallery
         const galleryRes = await pool.query('SELECT id, image_data FROM product_images WHERE product_id = $1', [id]);
         const galleryImages = galleryRes.rows.map(img => ({
             id: img.id,
@@ -226,7 +202,14 @@ router.get('/:id', async (req, res) => {
             ...product,
             main_image_url: mainImage,
             gallery_images: galleryImages,
-            price_breakdown: { final_total_price: finalPrice.toFixed(2) }
+            price_breakdown: { 
+                metal_rate: metalRate,
+                raw_metal_value: rawMetalValue.toFixed(2),
+                wastage_value: wastageValue.toFixed(2),
+                making_charge: actualMakingCharge.toFixed(2),
+                gst_amount: gstAmount.toFixed(2),
+                final_total_price: finalPrice.toFixed(2) 
+            }
         });
 
     } catch (err) {

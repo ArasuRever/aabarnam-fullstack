@@ -14,14 +14,13 @@ const Login = () => {
 
     try {
       const response = await axios.post('http://localhost:5000/api/auth/login', {
-        email,
+        identifier: email, // This guarantees it matches the backend properly!
         password
       });
 
       localStorage.setItem('adminToken', response.data.token);
       localStorage.setItem('adminUser', JSON.stringify(response.data.user));
 
-      // Redirect to dashboard instead of alerting
       navigate('/dashboard');
 
     } catch (err) {

@@ -56,7 +56,7 @@ router.post('/register', async (req, res) => {
 
 // 2. POST /api/auth/login (Accepts Phone OR Email)
 router.post('/login', async (req, res) => {
-    // We grab identifier, but fallback to email just in case an old form sends it
+    // Bulletproof fix: handles 'identifier' or 'email' dynamically
     const identifier = req.body.identifier || req.body.email; 
     const password = req.body.password;
 
@@ -109,16 +109,16 @@ router.delete('/addresses/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// 6. TEMPORARY ADMIN CREATION ROUTE (Keep this just in case!)
+// 6. TEMPORARY ADMIN CREATION ROUTE (Guaranteed to work)
 router.get('/create-admin', async (req, res) => {
     try {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash('SecurePassword123!', salt);
         await pool.query(
             'INSERT INTO users (name, email, password_hash, phone, role) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (email) DO NOTHING',
-            ['Arasu', 'admin@aabarnam.com', hashedPassword, '9876543210', 'ADMIN']
+            ['Arasu Admin', 'admin@aabarnam.com', hashedPassword, '9876543210', 'ADMIN']
         );
-        res.send('Admin Account Created! Email: admin@aabarnam.com');
+        res.send('<h1>Admin Account Created! ✅</h1><p>Email: <b>admin@aabarnam.com</b></p><p>Password: <b>SecurePassword123!</b></p>');
     } catch (err) {
         res.status(500).send('Error: ' + err.message);
     }

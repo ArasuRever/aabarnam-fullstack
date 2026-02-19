@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Users } from 'lucide-react'; // Added Users Icon
 
 const AdminLayout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('adminUser'));
   
-  // State for sidebar toggle
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // UPDATED: Added Orders to the menu items
+  // UPDATED: Added Customers
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: '📊' },
-    { name: 'Orders', path: '/orders', icon: '📦' }, // <--- New Orders Link
+    { name: 'Orders', path: '/orders', icon: '📦' },
+    { name: 'Customers', path: '/customers', icon: '👥' }, // NEW
     { name: 'Inventory', path: '/products', icon: '💎' },
     { name: 'Daily Rates', path: '/daily-rates', icon: '📈' },
     { name: 'Pricing Rules', path: '/pricing-rules', icon: '⚙️' },
@@ -27,19 +28,16 @@ const AdminLayout = ({ children }) => {
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans">
       
-      {/* Premium Sidebar */}
       <aside 
         className={`${
           isSidebarOpen ? 'w-64' : 'w-0'
         } bg-gray-900 text-white flex flex-col transition-all duration-300 ease-in-out h-full z-20 shadow-2xl overflow-hidden shrink-0 border-r border-gray-800`}
       >
-        {/* Brand Header */}
         <div className="p-6 min-w-[16rem] border-b border-gray-800">
            <h1 className="text-2xl font-bold text-gold tracking-tight">Aabarnam</h1>
            <p className="text-xs text-gray-500 tracking-widest uppercase mt-1">Admin Console</p>
         </div>
 
-        {/* Navigation Links */}
         <nav className="flex-grow mt-6 min-w-[16rem] px-2 space-y-1">
           {menuItems.map((item) => (
             <Link
@@ -57,7 +55,6 @@ const AdminLayout = ({ children }) => {
           ))}
         </nav>
 
-        {/* User Profile & Logout */}
         <div className="p-6 border-t border-gray-800 min-w-[16rem] bg-gray-900/50">
           <div className="flex items-center mb-4">
             <div className="w-8 h-8 rounded-full bg-gold text-black flex items-center justify-center font-bold mr-3">
@@ -77,10 +74,7 @@ const AdminLayout = ({ children }) => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full">
-        
-        {/* Top Header */}
         <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 shrink-0 z-10 shadow-sm">
           <div className="flex items-center">
             <button 
@@ -108,15 +102,12 @@ const AdminLayout = ({ children }) => {
           </div>
         </header>
 
-        {/* Content Container - FULL WIDTH FIX */}
         <main className="flex-1 overflow-y-auto bg-gray-50 p-6 md:p-8">
           <div className="w-full max-w-full mx-auto animate-fade-in"> 
-             {/* Replaced 'max-w-7xl' with 'w-full' to allow expansion */}
             {children}
           </div>
         </main>
       </div>
-
     </div>
   );
 };

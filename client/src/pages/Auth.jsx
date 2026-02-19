@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { User, Lock, Mail } from 'lucide-react';
+import toast from 'react-hot-toast'; // <--- NEW
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -23,14 +24,20 @@ const Auth = () => {
     try {
       if (isLogin) {
         await login(formData.email, formData.password);
-        alert("Welcome back! 💎");
+        toast.success("Welcome back! 💎", {
+            style: { border: '1px solid #D4AF37', padding: '16px', color: '#000', fontWeight: 'bold' },
+            iconTheme: { primary: '#D4AF37', secondary: '#000' },
+        });
       } else {
         await register(formData.name, formData.email, formData.password);
-        alert("Account created successfully! 🎉");
+        toast.success("Account created successfully! 🎉", {
+            style: { border: '1px solid #D4AF37', padding: '16px', color: '#000', fontWeight: 'bold' },
+            iconTheme: { primary: '#D4AF37', secondary: '#000' },
+        });
       }
-      navigate('/'); // Send them to the homepage after login
+      navigate('/'); 
     } catch (err) {
-      alert(err.response?.data?.error || "Authentication failed. Please try again.");
+      toast.error(err.response?.data?.error || "Authentication failed. Please try again.");
     } finally {
       setLoading(false);
     }
