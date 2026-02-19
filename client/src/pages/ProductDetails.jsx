@@ -66,19 +66,17 @@ const ProductDetails = () => {
         
         if (res.data.status === 'accepted') {
             setNegotiatedPrice(res.data.counter_offer);
-            toast.success("We have a deal! Price updated.");
+            toast.success("Deal Accepted! Price updated.");
         }
     } catch (err) {
         toast.error("Manager is currently helping another client.");
     } finally {
         setIsBargaining(false);
     }
-};
+  };
 
   const handleAddToCart = () => {
-    // If a price was negotiated, use that instead of the listed retail price
     const finalPrice = negotiatedPrice || product.price_breakdown?.final_total_price;
-    
     const productToCart = {
       ...product,
       price_breakdown: {
@@ -208,7 +206,6 @@ const ProductDetails = () => {
               </div>
             </div>
 
-            {/* Price Block */}
             <div className="bg-gray-50 p-6 rounded-xl border border-gray-100 mb-6">
               <div className="flex items-end gap-3 mb-2">
                 <span className="text-4xl font-bold text-gray-900 tracking-tight">₹{displayPrice}</span>
@@ -271,7 +268,6 @@ const ProductDetails = () => {
                </div>
             </div>
 
-            {/* ACTION BUTTONS */}
             <div className="flex gap-4 mb-10">
               <button 
                 onClick={handleAddToCart}
@@ -281,7 +277,6 @@ const ProductDetails = () => {
                 Add to Cart
               </button>
               
-              {/* Negotiate Button */}
               <button 
                 onClick={() => setShowChat(!showChat)}
                 className="w-14 h-14 bg-gold rounded-full flex items-center justify-center text-black shadow-lg hover:scale-110 transition-all active:scale-95"
@@ -298,7 +293,6 @@ const ProductDetails = () => {
               </button>
             </div>
 
-            {/* TRUST MARKERS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center border-t border-gray-100 pt-8">
                <div className="flex flex-col items-center gap-2">
                   <div className="bg-gray-100 p-3 rounded-full"><ShieldCheck size={20} className="text-gold" /></div>
@@ -324,60 +318,64 @@ const ProductDetails = () => {
         </div>
       </div>
 
-      {/* --- AI NEGOTIATION CHAT WINDOW --- */}
+      {/* --- SCALABLE AI CHAT WINDOW (Resize handle on Left) --- */}
       {showChat && (
-        <div className="fixed bottom-6 right-6 w-80 bg-white shadow-2xl rounded-2xl border border-gray-200 overflow-hidden z-[100] animate-fade-in flex flex-col">
-          {/* Header */}
-          <div className="bg-black p-4 text-white flex justify-between items-center">
-            <div className="flex items-center gap-2">
-               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-               <span className="font-bold text-sm tracking-wide">Aabarnam Negotiator</span>
-            </div>
-            <button onClick={() => setShowChat(false)} className="hover:text-gold transition"><X size={18} /></button>
-          </div>
-
-          {/* Messages Area */}
-          <div className="h-64 overflow-y-auto p-4 space-y-3 bg-gray-50 flex flex-col">
-            {chatMessages.map((msg, i) => (
-              <div 
-                key={i} 
-                className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed shadow-sm ${
-                  msg.role === 'bot' 
-                  ? 'bg-white border text-gray-800 self-start rounded-tl-none' 
-                  : 'bg-gold text-black font-bold self-end rounded-tr-none'
-                }`}
-              >
-                {msg.text}
+        <div 
+          className="fixed bottom-6 right-6 min-w-[320px] max-w-[600px] w-80 bg-white shadow-2xl rounded-2xl border border-gray-200 overflow-hidden z-[100] animate-fade-in flex flex-col resize"
+          style={{ height: '450px', direction: 'rtl' }}
+        >
+          {/* Internal content set back to LTR for normal text reading */}
+          <div className="flex flex-col h-full w-full" style={{ direction: 'ltr' }}>
+            <div className="bg-black p-4 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                 <span className="font-bold text-sm tracking-wide">Aabarnam Negotiator</span>
               </div>
-            ))}
-            {isBargaining && (
-               <div className="self-start bg-white border p-2 rounded-lg text-[10px] animate-pulse">AI is thinking...</div>
-            )}
-          </div>
-
-          {/* Input Area */}
-          <div className="p-3 border-t bg-white flex gap-2 items-center">
-            <div className="relative flex-1">
-               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">₹</span>
-               <input 
-                type="text" // Changed from 'number' to 'text' to allow greetings/sentences
-                value={userBid} 
-                onChange={(e) => setUserBid(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleBargain()}
-                placeholder="Chat with us..." 
-                className="w-full pl-3 pr-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-gold" 
-              />
+              <button onClick={() => setShowChat(false)} className="hover:text-gold transition"><X size={18} /></button>
             </div>
-            <button 
-              onClick={handleBargain} 
-              disabled={isBargaining || !userBid}
-              className={`p-2.5 rounded-xl transition shadow-md ${!userBid ? 'bg-gray-100 text-gray-400' : 'bg-black text-gold hover:bg-gray-800'}`}
-            >
-               <Send size={18} />
-            </button>
-          </div>
-          <div className="bg-gray-50 px-4 py-2 text-[9px] text-center text-gray-400 border-t">
-             Offers are subject to manager approval. Deal valid for this session only.
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 flex flex-col">
+              {chatMessages.map((msg, i) => (
+                <div 
+                  key={i} 
+                  className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed shadow-sm ${
+                    msg.role === 'bot' 
+                    ? 'bg-white border text-gray-800 self-start rounded-tl-none' 
+                    : 'bg-gold text-black font-bold self-end rounded-tr-none'
+                  }`}
+                >
+                  {msg.text}
+                </div>
+              ))}
+              {isBargaining && (
+                 <div className="self-start bg-white border p-2 rounded-lg text-[10px] animate-pulse">AI is thinking...</div>
+              )}
+            </div>
+
+            {/* Input Area - Fixed padding-left to prevent symbol overlap */}
+            <div className="p-3 border-t bg-white flex gap-2 items-center">
+              <div className="relative flex-1">
+                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm z-10 pointer-events-none">₹</span>
+                 <input 
+                   type="text" 
+                   value={userBid} 
+                   onChange={(e) => setUserBid(e.target.value)}
+                   onKeyDown={(e) => { if (e.key === 'Enter') handleBargain(); }}
+                   placeholder="Type your offer or greet..." 
+                   className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white" 
+                 />
+              </div>
+              <button 
+                onClick={handleBargain} 
+                disabled={isBargaining || !userBid.trim()}
+                className={`p-2.5 rounded-xl transition shadow-md ${!userBid.trim() ? 'bg-gray-100 text-gray-400' : 'bg-black text-gold hover:bg-gray-800'}`}
+              >
+                 <Send size={18} />
+              </button>
+            </div>
+            <div className="bg-gray-50 px-4 py-2 text-[9px] text-center text-gray-400 border-t">
+               Offers are subject to manager approval. Deal valid for this session only.
+            </div>
           </div>
         </div>
       )}

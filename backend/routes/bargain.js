@@ -16,13 +16,12 @@ router.post('/', async (req, res) => {
         if(prodRes.rows.length === 0) return res.status(404).json({error: "Product not found"});
         const product = prodRes.rows[0];
 
-        // 1. Calculate Prices (Floor vs Retail)
         const rawMetalToFetch = product.metal_type.includes('GOLD') ? '24K_GOLD' : 'SILVER';
         const rateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [rawMetalToFetch]);
         const retailRateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [product.metal_type]);
         
-        const rawRate = parseFloat(rateRes.rows[0]?.rate_per_gram || 0);
-        const retailRate = parseFloat(retailRateRes.rows[0]?.rate_per_gram || 0);
+        const rawRate = rateRes.rows.length > 0 ? parseFloat(rateRes.rows[0].rate_per_gram) : 0;
+        const retailRate = retailRateRes.rows.length > 0 ? parseFloat(retailRateRes.rows[0].rate_per_gram) : 0;
 
         const pureWeight = parseFloat(product.gross_weight) * (parseFloat(product.purchase_touch_pct || 91.6) / 100);
         const wholesaleCost = (pureWeight * rawRate) + parseFloat(product.purchase_mc || 0);
@@ -32,43 +31,45 @@ router.post('/', async (req, res) => {
         let actualMakingCharge = parseFloat(product.making_charge);
         if (product.making_charge_type === 'PERCENTAGE') actualMakingCharge = (retailMetalValue * actualMakingCharge) / 100;
         
-        const listedPrice = ((retailMetalValue + wastageValue + actualMakingCharge) * 1.03).toFixed(2); 
+        const subtotal = retailMetalValue + wastageValue + actualMakingCharge;
+        const listedPrice = (subtotal + (subtotal * 0.03)).toFixed(2); 
         const absoluteMinimum = (wholesaleCost * 1.05).toFixed(2); 
 
-        // 2. The Salesperson Prompt
-        const systemPrompt = `
-        You are 'Aabarnam Bot', a sophisticated, polite jewelry salesperson.
-        Context:
-        - Product: ${product.name}
-        - Listed Retail Price: ₹${listedPrice}
-        - Secret Floor Price: ₹${absoluteMinimum}
-        - Customer Input: "${user_bid}"
+        const apiKey = process.env.GEMINI_API_KEY;
 
-        Instructions:
-        1. If the user is just greeting (Hi/Hello/How are you), respond warmly and ask how you can help with the ${product.name}.
-        2. If the user offers MORE than ₹${listedPrice}, say: "That is very kind, but our price is only ₹${listedPrice}. I can offer it to you for that price right now!"
-        3. If they offer less than ₹${absoluteMinimum}, politely explain that the quality and craftsmanship have a fixed cost, then make a counter-offer.
-        4. If they offer between floor and retail, you can accept it or try to squeeze ₹500 more.
-        5. Return ONLY JSON.
+        const systemPrompt = `You are 'Aabarnam Bot', a sophisticated, polite Indian jewelry salesperson.
+Context:
+- Product: ${product.name}
+- Listed Retail Price: ₹${listedPrice}
+- Your Hidden Floor Price: ₹${absoluteMinimum}
+- Customer Input: "${user_bid}"
 
-        Output Format:
-        {
-          "response_message": "Warm sales talk here",
-          "status": "negotiating" | "accepted" | "rejected",
-          "counter_offer": 12345
-        }`;
+Instructions:
+1. GREETINGS: If the user says "Hi", "Hello", or "Namaste", respond warmly and ask how you can help them with the ${product.name}.
+2. OVER-BIDDING: If the user offers MORE than ₹${listedPrice}, politely say: "You are very generous! However, our listed price is only ₹${listedPrice}. I can offer it to you for that price right now."
+3. NEGOTIATION: If they offer a number less than ₹${absoluteMinimum}, explain that craftsmanship and purity have costs, and make a counter-offer above floor.
+4. If the offer is between ₹${absoluteMinimum} and ₹${listedPrice}, you can accept or try to get ₹500 more.
+5. Return ONLY strictly valid JSON.
 
-        const aiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+Schema:
+{
+  "response_message": "string",
+  "status": "negotiating" | "accepted" | "rejected",
+  "counter_offer": number
+}`;
+
+        // FIX: Changed model to gemini-1.5-flash
+        const aiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         const aiRes = await axios.post(aiUrl, {
             contents: [{ parts: [{ text: systemPrompt }] }],
-            generationConfig: { responseMimeType: "application/json" }
+            generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
         });
 
         res.json(JSON.parse(aiRes.data.candidates[0].content.parts[0].text));
 
     } catch (err) {
-        console.error("Negotiation Error:", err);
-        res.status(500).json({ error: "Bargain server error" });
+        console.error("Negotiation Error:", err.message);
+        res.status(500).json({ error: "Bargain engine error" });
     }
 });
 
