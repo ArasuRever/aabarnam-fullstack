@@ -45,7 +45,8 @@ module.exports = (io, pool) => {
             listedPrice: 0,
             baseMetalValue: 0,
             gstAmount: 0,
-            productName: ""
+            productName: "",
+            isDealClosed: false // NEW: Lock to prevent post-deal drops
         };
 
         // 1. Initialize Negotiation Session
@@ -83,27 +84,28 @@ module.exports = (io, pool) => {
                     listedPrice: listedPrice,
                     baseMetalValue: retailMetalValue,
                     gstAmount: gst,
-                    productName: product.name
+                    productName: product.name,
+                    isDealClosed: false
                 };
 
-                const systemPrompt = `You are a persuasive, polite, expert Indian jewelry store manager for 'Aabarnam'.
+                // UPGRADED PROMPT: Protect margins and force small discount steps
+                const systemPrompt = `You are a polite but shrewd Indian jewelry store manager for 'Aabarnam'.
 CONTEXT:
 - Product: ${product.name}
 - Official Retail Price: ₹${listedPrice}
 - Your Absolute Walk-Away Floor Price: ₹${absoluteMinimum}. YOU MUST NEVER SELL BELOW THIS NUMBER.
 - Base Metal Value (Untouchable): ₹${retailMetalValue.toFixed(2)}
 
-RULES:
+STRICT NEGOTIATION RULES:
 1. Speak naturally like a real human shopkeeper.
-2. The user is trying to bargain. If they ask for a discount, drop your offer slightly.
-3. If they bid below your floor of ₹${absoluteMinimum}, act slightly offended but polite, and state your final rock-bottom price just above the floor.
-4. If they linger or hesitate, offer a proactive "sweetener" deal.
+2. PROTECT THE PROFIT MARGIN. Do NOT drop your price by large amounts.
+3. When the user asks for a discount, make VERY SMALL concessions (e.g., drop by just ₹50 to ₹300 at a time). Make them work for every Rupee.
+4. If they bid below your floor of ₹${absoluteMinimum}, act slightly offended but polite, and state your final rock-bottom price just above the floor.
 5. ALWAYS round off the final price to the nearest whole Rupee. No decimals.
 6. You MUST use the update_live_price tool to respond. Calculate the new making charge and wastage to logically match your final rounded price.`;
 
-                // THE FIX: Update the model string to the current active generation
                 const sessionModel = genAI.getGenerativeModel({
-                    model: "gemini-2.5-flash", // <-- Changed from 1.5 to 2.5
+                    model: "gemini-2.5-flash",
                     systemInstruction: {
                         role: "system",
                         parts: [{ text: systemPrompt }]
@@ -125,7 +127,7 @@ RULES:
 
         // 2. Handle User Messages
         socket.on('send_message', async ({ text }) => {
-            if (!sessionData.chatSession) return;
+            if (!sessionData.chatSession || sessionData.isDealClosed) return; // FIXED: Ignore if deal closed
             
             socket.emit('ai_typing', true);
             
@@ -141,10 +143,22 @@ RULES:
 
         // 3. Hesitation Tracking (Triggered by frontend if user is idle)
         socket.on('user_hesitating', async () => {
-            if (!sessionData.chatSession) return;
+            if (!sessionData.chatSession || sessionData.isDealClosed) return; // FIXED: Ignore if deal closed
             socket.emit('ai_typing', true);
             try {
-                const result = await sessionData.chatSession.sendMessage("SYSTEM NOTE: The user has been staring at the checkout page for 30 seconds without replying. Proactively offer a slightly better deal or ask what is holding them back to close the sale.");
+                const result = await sessionData.chatSession.sendMessage("SYSTEM NOTE: The user has been staring at the checkout page for 30 seconds without replying. Proactively offer a very small, minimal discount to encourage them.");
+                handleAiResponse(result, socket, sessionData);
+            } catch (err) {
+                socket.emit('ai_typing', false);
+            }
+        });
+
+        // 4. Exit Intent (Triggered by frontend if user tries to leave)
+        socket.on('user_leaving', async () => {
+            if (!sessionData.chatSession || sessionData.isDealClosed) return;
+            socket.emit('ai_typing', true);
+            try {
+                const result = await sessionData.chatSession.sendMessage("SYSTEM NOTE: The user is about to leave the website or switch tabs! Make a highly compelling 'wait, don't go' counter-offer right now.");
                 handleAiResponse(result, socket, sessionData);
             } catch (err) {
                 socket.emit('ai_typing', false);
@@ -171,6 +185,11 @@ RULES:
                 finalPrice = sessionData.floorPrice;
                 aiDecision.message = `I wish I could do that, but my absolute rock-bottom is ₹${finalPrice}. I cannot go a single Rupee lower.`;
                 aiDecision.status = "negotiating";
+            }
+
+            // NEW: Lock the backend session if the deal is struck
+            if (aiDecision.status === 'accepted') {
+                sessionData.isDealClosed = true;
             }
 
             // Emit UI Update directly

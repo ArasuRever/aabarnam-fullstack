@@ -113,12 +113,40 @@ const ProductDetails = () => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, isTyping]);
 
+  // --- EXIT INTENT TRACKING ---
+  useEffect(() => {
+      const handleVisibilityChange = () => {
+          if (document.hidden && dealStatus !== 'accepted' && socketRef.current) {
+              socketRef.current.emit('user_leaving');
+              setShowChat(true); 
+          }
+      };
+
+      const handleMouseLeave = (e) => {
+          if (e.clientY <= 0 && dealStatus !== 'accepted' && socketRef.current) {
+              socketRef.current.emit('user_leaving');
+              setShowChat(true); 
+          }
+      };
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      document.addEventListener("mouseleave", handleMouseLeave);
+
+      return () => {
+          document.removeEventListener("visibilitychange", handleVisibilityChange);
+          document.removeEventListener("mouseleave", handleMouseLeave);
+      };
+  }, [dealStatus]);
+
   // --- HESITATION SENTIMENT TRACKING ---
   const resetHesitationTimer = () => {
       if (hesitationTimerRef.current) clearTimeout(hesitationTimerRef.current);
-      // If user stares at chat for 30 seconds doing nothing, trigger AI
+      
+      // Stop timer completely if the deal is accepted
+      if (dealStatus === 'accepted') return; 
+
       hesitationTimerRef.current = setTimeout(() => {
-          if (socketRef.current && !dealStatus) {
+          if (socketRef.current && dealStatus !== 'accepted') {
               socketRef.current.emit('user_hesitating');
           }
       }, 30000); 
@@ -348,7 +376,6 @@ const ProductDetails = () => {
                  <Heart size={20} />
               </button>
             </div>
-            {/* ... bottom features remain the same ... */}
           </div>
         </div>
       </div>
