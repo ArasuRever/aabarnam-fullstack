@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ShieldCheck, Lock } from 'lucide-react';
+import { ShieldCheck, Lock, MapPin, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext'; 
 
 const Checkout = () => {
@@ -11,6 +11,11 @@ const Checkout = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
+  // Address States
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [selectedAddress, setSelectedAddress] = useState(null);
+  const [showNewAddressForm, setShowNewAddressForm] = useState(true);
+
   const [formData, setFormData] = useState({
     fullName: '',
     phone: '',
@@ -18,6 +23,21 @@ const Checkout = () => {
     city: '',
     pincode: '',
   });
+
+  // Fetch user addresses on load
+  useEffect(() => {
+    if (user) {
+        axios.get(`http://localhost:5000/api/auth/addresses/${user.id}`)
+            .then(res => {
+                if (res.data && res.data.length > 0) {
+                    setSavedAddresses(res.data);
+                    setSelectedAddress(res.data[0]); // Auto-select default
+                    setShowNewAddressForm(false); // Hide manual form
+                }
+            })
+            .catch(err => console.error("Failed to fetch addresses", err));
+    }
+  }, [user]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -28,23 +48,42 @@ const Checkout = () => {
     setLoading(true);
 
     try {
+      let formattedAddress = "";
+      let customerName = "";
+
+      // 1. Format Address & Extract Name based on selection
+      if (showNewAddressForm) {
+          formattedAddress = `${formData.fullName}, ${formData.phone} | ${formData.address}, ${formData.city} - ${formData.pincode}`;
+          customerName = formData.fullName;
+      } else if (selectedAddress) {
+          formattedAddress = `${selectedAddress.full_name}, ${selectedAddress.phone} | ${selectedAddress.address}, ${selectedAddress.city} - ${selectedAddress.pincode}`;
+          customerName = selectedAddress.full_name;
+      } else {
+          alert("Please provide a shipping address.");
+          setLoading(false);
+          return;
+      }
+
+      // 2. Prepare the payload with the new customer_name field
       const orderData = {
-        customer: formData,
-        items: cart,
+        user_id: user ? user.id : null,
+        customer_name: customerName, // FIX: Provided for DB constraint
         total_amount: cartTotal,
-        userId: user ? user.id : null
+        shipping_address: formattedAddress,
+        payment_method: 'CASH_ON_DELIVERY',
+        items: cart
       };
 
       const res = await axios.post('http://localhost:5000/api/orders', orderData);
 
-      if (res.status === 201) {
-        clearCart(); // Empty the bag
+      if (res.status === 200 || res.status === 201) {
+        clearCart(); 
         alert(`Order Placed Successfully! 🎉\nYour Order ID is: #${res.data.orderId}`);
-        navigate('/'); // Go back home
+        navigate('/'); 
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to place order. Please try again.');
+      alert(err.response?.data?.error || 'Failed to place order. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -66,43 +105,103 @@ const Checkout = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           
-          {/* LEFT: SHIPPING FORM */}
-          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+          {/* LEFT: SHIPPING FORM (New Address Cards UX) */}
+          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 h-fit">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
               Shipping Details
             </h2>
             
-            <form id="checkout-form" onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Full Name</label>
-                <input required name="fullName" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" placeholder="e.g. Arasu K" />
-              </div>
+            <form id="checkout-form" onSubmit={handleSubmit}>
               
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone Number</label>
-                <input required name="phone" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" placeholder="e.g. 9876543210" />
-              </div>
+              {/* --- SAVED ADDRESSES --- */}
+              {user && savedAddresses.length > 0 && (
+                 <div className="mb-6 space-y-3">
+                    {savedAddresses.map(addr => (
+                       <div 
+                         key={addr.id} 
+                         onClick={() => { setSelectedAddress(addr); setShowNewAddressForm(false); }}
+                         className={`p-4 rounded-lg cursor-pointer transition-all border ${
+                            selectedAddress?.id === addr.id && !showNewAddressForm 
+                            ? 'border-gold bg-gold/5 shadow-sm' 
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                         }`}
+                       >
+                          <div className="flex justify-between items-start">
+                              <div className="flex items-start gap-3">
+                                  <MapPin className={`mt-0.5 ${selectedAddress?.id === addr.id && !showNewAddressForm ? 'text-gold' : 'text-gray-400'}`} size={18} />
+                                  <div>
+                                      <p className="font-bold text-gray-900 text-sm">{addr.full_name}</p>
+                                      <p className="text-xs text-gray-600 mt-1">{addr.address}, {addr.city} - {addr.pincode}</p>
+                                      <p className="text-xs font-medium text-gray-800 mt-1">Mobile: {addr.phone}</p>
+                                  </div>
+                              </div>
+                              {selectedAddress?.id === addr.id && !showNewAddressForm && (
+                                  <CheckCircle2 size={20} className="text-gold" />
+                              )}
+                          </div>
+                       </div>
+                    ))}
 
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Address</label>
-                <textarea required name="address" onChange={handleChange} rows="3" className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" placeholder="Street, Door No, Landmark"></textarea>
-              </div>
+                    {!showNewAddressForm && (
+                       <button 
+                         type="button" 
+                         onClick={() => { setShowNewAddressForm(true); setSelectedAddress(null); }} 
+                         className="text-xs font-bold text-gold-dark hover:underline mt-2 inline-block"
+                       >
+                          + Add a new address
+                       </button>
+                    )}
+                 </div>
+              )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">City</label>
-                  <input required name="city" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" />
+              {/* --- MANUAL ENTRY FORM --- */}
+              {showNewAddressForm && (
+                <div className="space-y-4 pt-2">
+                  {user && savedAddresses.length > 0 && (
+                     <div className="flex justify-between items-center mb-2">
+                         <span className="text-xs font-bold text-gray-500 uppercase">New Address</span>
+                         <button 
+                           type="button" 
+                           onClick={() => { setShowNewAddressForm(false); setSelectedAddress(savedAddresses[0]); }} 
+                           className="text-xs text-red-500 hover:underline"
+                         >
+                            Cancel
+                         </button>
+                     </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Full Name</label>
+                    <input required={showNewAddressForm} name="fullName" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" placeholder="e.g. Arasu K" />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone Number</label>
+                    <input required={showNewAddressForm} name="phone" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" placeholder="e.g. 9876543210" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Address</label>
+                    <textarea required={showNewAddressForm} name="address" onChange={handleChange} rows="3" className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" placeholder="Street, Door No, Landmark"></textarea>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">City</label>
+                      <input required={showNewAddressForm} name="city" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Pincode</label>
+                      <input required={showNewAddressForm} name="pincode" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Pincode</label>
-                  <input required name="pincode" onChange={handleChange} className="w-full p-3 border rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-gold outline-none transition" />
-                </div>
-              </div>
+              )}
             </form>
           </div>
 
-          {/* RIGHT: ORDER SUMMARY */}
+          {/* RIGHT: ORDER SUMMARY (Your Preferred Styling Restored) */}
           <div className="space-y-6">
             <div className="bg-white p-8 rounded-xl shadow-lg border border-gold/20 sticky top-24">
                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
