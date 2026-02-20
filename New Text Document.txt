@@ -12,3 +12,8 @@ Note If you haven't initialized this account in your database yet, you just need
 https://github.com/ArasuRever/aabarnam-fullstack
 
 okay for the login i want real time login and registeration to our site experience, for the users the primary login key is going to be their phone number, while setting up their name and account we shall ask for address fields for product deilvery when they order, and on the profile page with an option to add additional address or to edit their address. their phone number is going to be our primary login info for us, with their phone number we shall know the customer so we need a phone number/username/email 
+
+
+https://console.cloud.google.com/apis/credentials?project=project-3d767ad2-200a-4a17-81d
+
+https://aistudio.google.com/app/api-keys
