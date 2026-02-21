@@ -54,9 +54,27 @@ const Customers = () => {
                     {selectedUser.orders.length === 0 ? <p className="text-sm text-gray-400">No orders yet.</p> : (
                        <div className="space-y-3">
                           {selectedUser.orders.map(order => (
-                             <div key={order.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 flex justify-between items-center text-sm">
-                                <div><p className="font-bold text-gray-800">Order #{order.id}</p><p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString()}</p></div>
-                                <div className="text-right"><p className="font-bold text-gray-900">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p><p className={`text-[10px] font-bold ${order.status === 'DELIVERED' ? 'text-green-600' : 'text-blue-600'}`}>{order.status}</p></div>
+                             <div key={order.id} className="bg-gray-50 p-4 rounded-lg border border-gray-100 flex flex-col text-sm">
+                                <div className="flex justify-between mb-2 pb-2 border-b border-gray-200">
+                                   <div><p className="font-bold text-gray-800">Order #{order.id}</p><p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString()}</p></div>
+                                   <div className="text-right"><p className="font-bold text-gray-900">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p><p className={`text-[10px] font-bold ${order.status === 'DELIVERED' ? 'text-green-600' : 'text-blue-600'}`}>{order.status}</p></div>
+                                </div>
+                                {/* UPGRADED: Items List with AI Deal Badges */}
+                                <div className="space-y-1">
+                                    {order.items.map((item, idx) => (
+                                        <div key={idx} className="flex justify-between items-center py-1">
+                                            <span className="text-gray-600 text-xs">{item.quantity}x {item.product_name}</span>
+                                            <div className="text-right flex items-center">
+                                                {parseFloat(item.discount) > 0 && (
+                                                    <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold mr-2">
+                                                        AI Saved Customer: ₹{parseFloat(item.discount).toFixed(0)}
+                                                    </span>
+                                                )}
+                                                <span className="font-medium text-xs">₹{item.price}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                              </div>
                           ))}
                        </div>

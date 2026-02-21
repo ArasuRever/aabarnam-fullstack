@@ -7,7 +7,8 @@ import Products from './pages/Products';
 import AddProduct from './pages/AddProduct';
 import PricingRules from './pages/PricingRules'; 
 import Orders from './pages/Orders';
-import Customers from './pages/Customers'; // NEW
+import Customers from './pages/Customers';
+import Reshelf from './pages/Reshelf'; // NEW: Imported the Reshelf page
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('adminToken');
@@ -26,7 +27,8 @@ function App() {
         <Route path="/products/add" element={<ProtectedRoute><AddProduct /></ProtectedRoute>} />
         <Route path="/pricing-rules" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
         <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
-        <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} /> {/* NEW */}
+        <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+        <Route path="/reshelf" element={<ProtectedRoute><Reshelf /></ProtectedRoute>} /> {/* NEW: Added Route */}
       </Routes>
     </Router>
   );

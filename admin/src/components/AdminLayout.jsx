@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Users } from 'lucide-react'; // Added Users Icon
+import { Users } from 'lucide-react'; 
 
 const AdminLayout = ({ children }) => {
   const location = useLocation();
@@ -9,11 +9,12 @@ const AdminLayout = ({ children }) => {
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // UPDATED: Added Customers
+  // UPDATED: Added Reshelving Queue to the sidebar menu
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: '📊' },
     { name: 'Orders', path: '/orders', icon: '📦' },
-    { name: 'Customers', path: '/customers', icon: '👥' }, // NEW
+    { name: 'Reshelf Queue', path: '/reshelf', icon: '♻️' }, // NEW ITEM
+    { name: 'Customers', path: '/customers', icon: '👥' }, 
     { name: 'Inventory', path: '/products', icon: '💎' },
     { name: 'Daily Rates', path: '/daily-rates', icon: '📈' },
     { name: 'Pricing Rules', path: '/pricing-rules', icon: '⚙️' },

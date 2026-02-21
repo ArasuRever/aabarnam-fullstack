@@ -3,7 +3,6 @@ const router = express.Router();
 const { Pool } = require('pg');
 const multer = require('multer');
 
-// Memory storage for handling file uploads
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
@@ -15,7 +14,6 @@ const pool = new Pool({
     database: process.env.DB_NAME,
 });
 
-// 1. GET ALL PRODUCTS (List View)
 router.get('/', async (req, res) => {
     try {
         const productsResult = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
@@ -24,23 +22,41 @@ router.get('/', async (req, res) => {
         const liveRates = {};
         ratesResult.rows.forEach(r => liveRates[r.metal_type] = parseFloat(r.rate_per_gram));
 
-        const products = productsResult.rows.map(product => {
-            const metalRate = liveRates[product.metal_type] || 0;
-            const netWeight = parseFloat(product.net_weight);
-            const makingCharge = parseFloat(product.making_charge);
-            const wastagePct = parseFloat(product.wastage_pct);
-            
-            const rawMetalValue = netWeight * metalRate;
-            const wastageValue = (rawMetalValue * wastagePct) / 100;
-            
-            let actualMakingCharge = makingCharge;
-            if (product.making_charge_type === 'PERCENTAGE') {
-                actualMakingCharge = (rawMetalValue * makingCharge) / 100;
-            }
+        const { inStock } = req.query;
+        let queryStr = 'SELECT * FROM products';
+        
+        // NEW: Filter out sold items if requested by the client
+        if (inStock === 'true') {
+            queryStr += ' WHERE stock_quantity > 0';
+        }
+        queryStr += ' ORDER BY created_at DESC';
 
-            const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
-            const gstAmount = subtotal * 0.03;
-            const finalPrice = (subtotal + gstAmount).toFixed(2);
+        const products = productsResult.rows.map(product => {
+            let finalPrice;
+            
+            // DYNAMIC VS FIXED PRICING LOGIC
+            if (product.retail_price_type === 'FIXED') {
+                finalPrice = parseFloat(product.fixed_price).toFixed(2);
+            } else {
+                const metalRate = liveRates[product.metal_type] || 0;
+                const netWeight = parseFloat(product.net_weight);
+                const makingCharge = parseFloat(product.making_charge);
+                const wastagePct = parseFloat(product.wastage_pct);
+                
+                const rawMetalValue = netWeight * metalRate;
+                const wastageValue = (rawMetalValue * wastagePct) / 100;
+                
+                let actualMakingCharge = parseFloat(product.making_charge || 0);
+                if (product.making_charge_type === 'PERCENTAGE') {
+                    actualMakingCharge = (rawMetalValue * actualMakingCharge) / 100;
+                } else if (product.making_charge_type === 'PER_GRAM') {
+                    actualMakingCharge = netWeight * actualMakingCharge;
+                }
+
+                const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
+                const gstAmount = subtotal * 0.03;
+                finalPrice = (subtotal + gstAmount).toFixed(2);
+            }
 
             let mainImage = null;
             if (product.main_image_url) {
@@ -61,7 +77,6 @@ router.get('/', async (req, res) => {
     }
 });
 
-// 2. POST NEW PRODUCT (With Multiple Images & Duplicate SKU fix)
 router.post('/', upload.array('images'), async (req, res) => {
     const client = await pool.connect();
     try {
@@ -70,8 +85,8 @@ router.post('/', upload.array('images'), async (req, res) => {
             sku, name, description, metal_type, item_type,
             gross_weight, stone_weight, net_weight, making_charge_type, 
             making_charge, wastage_pct,
-            // NEW FIELDS FROM ADMIN PANEL
-            purchase_type, purchase_touch_pct, purchase_mc, purchase_fixed_price
+            purchase_touch_pct, purchase_mc_type, purchase_mc, 
+            retail_price_type, fixed_price
         } = req.body;
 
         const mainImageBuffer = req.files && req.files.length > 0 ? req.files[0].buffer : null;
@@ -80,19 +95,17 @@ router.post('/', upload.array('images'), async (req, res) => {
             INSERT INTO products 
             (sku, name, description, main_image_url, metal_type, item_type, 
              gross_weight, stone_weight, net_weight, making_charge_type, 
-             making_charge, wastage_pct, purchase_type, purchase_touch_pct, 
-             purchase_mc, purchase_fixed_price) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
+             making_charge, wastage_pct, purchase_touch_pct, purchase_mc_type, 
+             purchase_mc, retail_price_type, fixed_price) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) 
             RETURNING id`;
         
         const productRes = await client.query(insertText, [
             sku, name, description, mainImageBuffer, metal_type, item_type, 
             gross_weight, stone_weight, net_weight, making_charge_type, making_charge, wastage_pct,
-            purchase_type || 'WEIGHT_TOUCH', purchase_touch_pct || 91.6, 
-            purchase_mc || 0, purchase_fixed_price || 0
+            purchase_touch_pct, purchase_mc_type, purchase_mc, retail_price_type, fixed_price
         ]);
         
-        // ... rest of the image gallery code ...
         const productId = productRes.rows[0].id;
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
@@ -103,23 +116,37 @@ router.post('/', upload.array('images'), async (req, res) => {
         res.json({ message: "Product saved", productId });
     } catch (err) {
         await client.query('ROLLBACK');
-        // ... error handling ...
+        console.error(err);
+        res.status(500).json({ error: 'Save failed' });
     } finally { client.release(); }
 });
 
-// 3. PUT UPDATE PRODUCT
 router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'new_gallery_images' }]), async (req, res) => {
     const { id } = req.params;
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
-        const { name, item_type, metal_type, gross_weight, net_weight, wastage_pct, making_charge, deleted_gallery_ids } = req.body;
+        const { 
+            name, item_type, metal_type, gross_weight, net_weight, stone_weight,
+            wastage_pct, making_charge, retail_price_type, fixed_price,
+            purchase_touch_pct, purchase_mc_type, purchase_mc, deleted_gallery_ids 
+        } = req.body;
 
-        let updateQuery = `UPDATE products SET name=$1, item_type=$2, metal_type=$3, gross_weight=$4, net_weight=$5, wastage_pct=$6, making_charge=$7 WHERE id=$8`;
-        await client.query(updateQuery, [name, item_type, metal_type, gross_weight, net_weight, wastage_pct, making_charge, id]);
+        let updateQuery = `
+            UPDATE products 
+            SET name=$1, item_type=$2, metal_type=$3, gross_weight=$4, net_weight=$5, 
+                wastage_pct=$6, making_charge=$7, retail_price_type=$8, fixed_price=$9,
+                purchase_touch_pct=$10, purchase_mc_type=$11, purchase_mc=$12, stone_weight=$13
+            WHERE id=$14`;
+            
+        await client.query(updateQuery, [
+            name, item_type, metal_type, gross_weight, net_weight, 
+            wastage_pct, making_charge, retail_price_type, fixed_price,
+            purchase_touch_pct, purchase_mc_type, purchase_mc, stone_weight, id
+        ]);
 
-        if (req.files['thumbnail']) {
+        if (req.files && req.files['thumbnail']) {
             await client.query('UPDATE products SET main_image_url=$1 WHERE id=$2', [req.files['thumbnail'][0].buffer, id]);
         }
 
@@ -130,7 +157,7 @@ router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'n
             }
         }
 
-        if (req.files['new_gallery_images']) {
+        if (req.files && req.files['new_gallery_images']) {
             for (const file of req.files['new_gallery_images']) {
                 await client.query('INSERT INTO product_images (product_id, image_data) VALUES ($1, $2)', [id, file.buffer]);
             }
@@ -147,7 +174,6 @@ router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'n
     }
 });
 
-// 4. DELETE PRODUCT
 router.delete('/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
@@ -155,15 +181,11 @@ router.delete('/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Delete error' }); }
 });
 
-// 5. GET /api/products/:id - Fetch Single Product (Includes Detailed Price Breakdown)
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const productRes = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
-        
-        if (productRes.rows.length === 0) {
-            return res.status(404).json({ error: "Product not found" });
-        }
+        if (productRes.rows.length === 0) return res.status(404).json({ error: "Product not found" });
 
         const product = productRes.rows[0];
 
@@ -171,22 +193,47 @@ router.get('/:id', async (req, res) => {
         const liveRates = {};
         ratesResult.rows.forEach(r => liveRates[r.metal_type] = parseFloat(r.rate_per_gram));
 
-        const metalRate = liveRates[product.metal_type] || 0;
-        const netWeight = parseFloat(product.net_weight);
-        const makingCharge = parseFloat(product.making_charge);
-        const wastagePct = parseFloat(product.wastage_pct);
+        let breakdown = {};
         
-        const rawMetalValue = netWeight * metalRate;
-        const wastageValue = (rawMetalValue * wastagePct) / 100;
-        
-        let actualMakingCharge = makingCharge;
-        if (product.making_charge_type === 'PERCENTAGE') {
-            actualMakingCharge = (rawMetalValue * makingCharge) / 100;
-        }
+        if (product.retail_price_type === 'FIXED') {
+            const finalP = parseFloat(product.fixed_price);
+            const base = finalP / 1.03;
+            const gst = finalP - base;
+            breakdown = {
+                metal_rate: liveRates[product.metal_type] || 0,
+                raw_metal_value: '0.00', wastage_value: '0.00', making_charge: '0.00',
+                gst_amount: gst.toFixed(2), final_total_price: finalP.toFixed(2),
+                is_fixed: true
+            };
+        } else {
+            const metalRate = liveRates[product.metal_type] || 0;
+            const netWeight = parseFloat(product.net_weight);
+            const makingCharge = parseFloat(product.making_charge);
+            const wastagePct = parseFloat(product.wastage_pct);
+            
+            const rawMetalValue = netWeight * metalRate;
+            const wastageValue = (rawMetalValue * wastagePct) / 100;
+            
+            let actualMakingCharge = parseFloat(product.making_charge || 0);
+            if (product.making_charge_type === 'PERCENTAGE') {
+                actualMakingCharge = (rawMetalValue * actualMakingCharge) / 100;
+            } else if (product.making_charge_type === 'PER_GRAM') {
+                actualMakingCharge = netWeight * actualMakingCharge;
+            }
 
-        const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
-        const gstAmount = subtotal * 0.03;
-        const finalPrice = subtotal + gstAmount;
+            const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
+            const gstAmount = subtotal * 0.03;
+            
+            breakdown = { 
+                metal_rate: metalRate,
+                raw_metal_value: rawMetalValue.toFixed(2),
+                wastage_value: wastageValue.toFixed(2),
+                making_charge: actualMakingCharge.toFixed(2),
+                gst_amount: gstAmount.toFixed(2),
+                final_total_price: (subtotal + gstAmount).toFixed(2),
+                is_fixed: false
+            };
+        }
 
         let mainImage = null;
         if (product.main_image_url) {
@@ -203,20 +250,69 @@ router.get('/:id', async (req, res) => {
             ...product,
             main_image_url: mainImage,
             gallery_images: galleryImages,
-            price_breakdown: { 
-                metal_rate: metalRate,
-                raw_metal_value: rawMetalValue.toFixed(2),
-                wastage_value: wastageValue.toFixed(2),
-                making_charge: actualMakingCharge.toFixed(2),
-                gst_amount: gstAmount.toFixed(2),
-                final_total_price: finalPrice.toFixed(2) 
-            }
+            price_breakdown: breakdown
         });
 
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: 'Server error fetching product details' });
     }
+});
+
+// ==========================================
+// REVIEWS & RATINGS LOGIC
+// ==========================================
+
+// GET all reviews for a product
+router.get('/:id/reviews', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT r.*, u.name as user_name 
+            FROM reviews r 
+            JOIN users u ON r.user_id = u.id 
+            WHERE r.product_id = $1 
+            ORDER BY r.created_at DESC
+        `, [req.params.id]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// GET eligibility (Did this specific user buy this specific item?)
+router.get('/:id/eligibility/:userId', async (req, res) => {
+    try {
+        const { id, userId } = req.params;
+        
+        // Check if item exists in their order history
+        const orderCheck = await pool.query(`
+            SELECT o.id 
+            FROM orders o 
+            JOIN order_items oi ON o.id = oi.order_id 
+            WHERE o.user_id = $1 AND oi.product_id = $2
+            LIMIT 1
+        `, [userId, id]);
+        
+        // Check if they already reviewed it (1 review per item per user)
+        const reviewCheck = await pool.query('SELECT id FROM reviews WHERE user_id = $1 AND product_id = $2', [userId, id]);
+
+        res.json({ 
+            hasPurchased: orderCheck.rows.length > 0,
+            hasReviewed: reviewCheck.rows.length > 0,
+            canReview: orderCheck.rows.length > 0 && reviewCheck.rows.length === 0
+        });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// POST a new Verified Review
+router.post('/:id/reviews', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { user_id, rating, comment } = req.body;
+        await pool.query(
+            'INSERT INTO reviews (product_id, user_id, rating, comment) VALUES ($1, $2, $3, $4)',
+            [id, user_id, rating, comment]
+        );
+        res.json({ message: 'Review successfully published!' });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 module.exports = router;

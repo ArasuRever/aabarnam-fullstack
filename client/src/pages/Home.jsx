@@ -10,18 +10,20 @@ const Home = () => {
   const [rates, setRates] = useState({ gold: '...', silver: '...' });
 
   useEffect(() => {
-    const fetchLatest = async () => {
+    // 1. Fetch In-Stock Products
+    const fetchLatestProducts = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/products');
-        setProducts(res.data.slice(0, 4)); // Show top 4 newest items
+        const res = await axios.get('http://localhost:5000/api/products?inStock=true');
+        setProducts(res.data.slice(0, 4)); // Show only top 4 trending items
         setLoading(false);
       } catch (err) {
-        console.error("Error loading products");
+        console.error("Failed to fetch products:", err);
         setLoading(false);
       }
     };
 
-    const fetchRates = async () => {
+    // 2. Fetch Live Market Rates
+    const fetchLiveRates = async () => {
       try {
         const res = await axios.get('http://localhost:5000/api/rates');
         const goldRate = res.data.find(r => r.metal_type === '22K_GOLD');
@@ -30,11 +32,14 @@ const Home = () => {
             gold: goldRate ? parseFloat(goldRate.rate_per_gram).toLocaleString('en-IN') : '...',
             silver: silverRate ? parseFloat(silverRate.rate_per_gram).toLocaleString('en-IN') : '...'
         });
-      } catch(e) { console.error("Error loading rates"); }
+      } catch(e) { 
+        console.error("Error loading rates:", e); 
+      }
     };
 
-    fetchLatest();
-    fetchRates();
+    // Run both fetches when the page loads
+    fetchLatestProducts();
+    fetchLiveRates();
   }, []);
 
   return (
@@ -154,9 +159,9 @@ const Home = () => {
                <div className="text-center text-gray-400 py-10 border-2 border-dashed rounded-xl">Inventory updating soon.</div>
             ) : (
                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                  {products.map(product => (
+                 {products.map(product => (
                     <ProductCard key={product.id} product={product} />
-                  ))}
+                 ))}
                </div>
             )}
             

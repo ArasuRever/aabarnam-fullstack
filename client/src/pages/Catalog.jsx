@@ -21,18 +21,13 @@ const Catalog = () => {
 
   useEffect(() => {
     const fetchProducts = async () => {
-      setLoading(true);
       try {
-        const res = await axios.get('http://localhost:5000/api/products');
-        setProducts(res.data);
-        
-        // Extract unique item types from the database for the filter menu
-        const types = [...new Set(res.data.map(p => p.item_type))].filter(Boolean);
-        setAvailableTypes(types);
-
+        // ONLY FETCH IN-STOCK ITEMS
+        const response = await axios.get('http://localhost:5000/api/products?inStock=true');
+        setProducts(response.data);
         setLoading(false);
-      } catch (err) {
-        console.error("Error loading catalog");
+      } catch (error) {
+        console.error("Error fetching products", error);
         setLoading(false);
       }
     };
