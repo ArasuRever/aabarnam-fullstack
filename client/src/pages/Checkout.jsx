@@ -50,24 +50,28 @@ const Checkout = () => {
     try {
       let formattedAddress = "";
       let customerName = "";
+      let customerPhone = ""; // FIX: New variable for phone
 
-      // 1. Format Address & Extract Name based on selection
+      // 1. Format Address & Extract Name/Phone based on selection
       if (showNewAddressForm) {
           formattedAddress = `${formData.fullName}, ${formData.phone} | ${formData.address}, ${formData.city} - ${formData.pincode}`;
           customerName = formData.fullName;
+          customerPhone = formData.phone; // Extract from manual form
       } else if (selectedAddress) {
           formattedAddress = `${selectedAddress.full_name}, ${selectedAddress.phone} | ${selectedAddress.address}, ${selectedAddress.city} - ${selectedAddress.pincode}`;
           customerName = selectedAddress.full_name;
+          customerPhone = selectedAddress.phone; // Extract from saved address
       } else {
           alert("Please provide a shipping address.");
           setLoading(false);
           return;
       }
 
-      // 2. Prepare the payload with the new customer_name field
+      // 2. Prepare the payload with the new phone_number field
       const orderData = {
         user_id: user ? user.id : null,
-        customer_name: customerName, // FIX: Provided for DB constraint
+        customer_name: customerName, 
+        phone_number: customerPhone, // FIX: Added to payload
         total_amount: cartTotal,
         shipping_address: formattedAddress,
         payment_method: 'CASH_ON_DELIVERY',

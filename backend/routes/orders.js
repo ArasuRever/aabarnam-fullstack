@@ -40,8 +40,7 @@ router.post('/', async (req, res) => {
     try {
         await client.query('BEGIN');
         
-        // FIX: Extract customer_name from req.body
-        const { user_id, customer_name, total_amount, shipping_address, payment_method, items } = req.body;
+        const { user_id, customer_name, phone_number, total_amount, shipping_address, payment_method, items } = req.body;
 
         // ---------------------------------------------------------
         // 🛡️ ANTI-TAMPERING SECURITY ENGINE
@@ -68,10 +67,11 @@ router.post('/', async (req, res) => {
 
         let generatedOrderId; 
 
-        // 1. Insert Order (FIX: Added customer_name to the query)
+        // 1. Insert Order 
+        // FIX: Changed "shipping_address" to "address" to match your exact database schema
         const orderRes = await client.query(
-            'INSERT INTO orders (user_id, customer_name, total_amount, status, shipping_address, payment_method) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-            [user_id, customer_name, total_amount, 'PENDING', shipping_address, payment_method]
+            'INSERT INTO orders (user_id, customer_name, phone_number, total_amount, status, address, payment_method) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+            [user_id, customer_name, phone_number, total_amount, 'PENDING', shipping_address, payment_method]
         );
         generatedOrderId = orderRes.rows[0].id;
 
