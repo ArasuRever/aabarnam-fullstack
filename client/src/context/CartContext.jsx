@@ -1,18 +1,27 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import toast from 'react-hot-toast'; 
 
 const CartContext = createContext();
 
 export const useCart = () => useContext(CartContext);
 
 export const CartProvider = ({ children }) => {
-  // 1. Load cart & Auto-clean broken items
+  // NEW: 30 Min Base + 3 Min Grace Period
+  const TOTAL_LOCK_DURATION = 33 * 60 * 1000;
+
+  // 1. Load cart & Auto-clean broken/expired items on boot
   const [cart, setCart] = useState(() => {
     try {
       const savedCart = localStorage.getItem('aabarnam_cart');
       if (savedCart) {
           const parsedCart = JSON.parse(savedCart);
-          // MAGIC FIX: This line destroys the corrupted "Zero Price" items
-          return parsedCart.filter(item => item.price_breakdown && item.price_breakdown.final_total_price);
+          const now = Date.now();
+          
+          return parsedCart.filter(item => {
+              const hasPrice = item.price_breakdown && item.price_breakdown.final_total_price;
+              const isNotExpired = item.locked_at ? (now - item.locked_at < TOTAL_LOCK_DURATION) : true;
+              return hasPrice && isNotExpired;
+          });
       }
       return [];
     } catch (e) {
@@ -30,19 +39,42 @@ export const CartProvider = ({ children }) => {
     }
   }, [cart]);
 
-  // 3. INCREASE QTY & STRIP IMAGES (Prevents QuotaExceededError)
+  // 3. BACKGROUND CART MONITOR (Auto-evicts expired deals)
+  useEffect(() => {
+      if (cart.length === 0) return;
+
+      const interval = setInterval(() => {
+          const now = Date.now();
+          let hasExpiredItems = false;
+
+          const updatedCart = cart.filter(item => {
+              if (item.locked_at && (now - item.locked_at > TOTAL_LOCK_DURATION)) {
+                  hasExpiredItems = true;
+                  toast.error(`Price lock for ${item.name} expired! It has been removed from your bag.`, { duration: 6000, icon: '⏱️' });
+                  return false; 
+              }
+              return true; 
+          });
+
+          if (hasExpiredItems) setCart(updatedCart); 
+      }, 30000); // Check every 30 seconds
+
+      return () => clearInterval(interval);
+  }, [cart]);
+
+  // 4. ADD TO CART (Injects the timestamp)
   const addToCart = (product) => {
-    // We separate the heavy images from the safe data
     const { main_image_url, gallery_images, ...safeProduct } = product;
+    const lockedAt = Date.now(); // Record exact time of addition
 
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === safeProduct.id);
       if (existingItem) {
         return prevCart.map((item) =>
-          item.id === safeProduct.id ? { ...item, qty: item.qty + 1 } : item
+          item.id === safeProduct.id ? { ...item, qty: item.qty + 1, locked_at: lockedAt } : item
         );
       }
-      return [...prevCart, { ...safeProduct, qty: 1 }]; // Save only lightweight data
+      return [...prevCart, { ...safeProduct, qty: 1, locked_at: lockedAt }];
     });
   };
 

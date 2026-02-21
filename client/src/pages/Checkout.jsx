@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ShieldCheck, Lock, MapPin, CheckCircle2 } from 'lucide-react';
+// FIX: Added Clock to lucide-react imports
+import { ShieldCheck, Lock, MapPin, CheckCircle2, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext'; 
 
 const Checkout = () => {
@@ -16,13 +17,57 @@ const Checkout = () => {
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [showNewAddressForm, setShowNewAddressForm] = useState(true);
 
+  // Expiry Timer State
+  const [timeLeft, setTimeLeft] = useState(null);
+
   const [formData, setFormData] = useState({
-    fullName: '',
-    phone: '',
-    address: '',
-    city: '',
-    pincode: '',
+    fullName: '', phone: '', address: '', city: '', pincode: '',
   });
+
+  // --- LIVE EXPIRY COUNTDOWN LOGIC (WITH GRACE PERIOD) ---
+  useEffect(() => {
+    if (cart.length === 0) return;
+    
+    const oldestItem = cart.reduce((oldest, item) => {
+        if (!item.locked_at) return oldest; 
+        return (!oldest.locked_at || item.locked_at < oldest.locked_at) ? item : oldest;
+    }, cart[0]);
+
+    if (!oldestItem.locked_at) return;
+
+    const BASE_DURATION = 30 * 60 * 1000; // 30 minutes
+    const GRACE_DURATION = 3 * 60 * 1000; // 3 minutes
+    
+    const timer = setInterval(() => {
+        const timeElapsed = Date.now() - oldestItem.locked_at;
+
+        if (timeElapsed >= (BASE_DURATION + GRACE_DURATION)) {
+            // Completely Expired
+            clearInterval(timer);
+            setTimeLeft({ status: "Expired" });
+        } else if (timeElapsed >= BASE_DURATION) {
+            // In Grace Period (Orange)
+            const remainingGrace = (BASE_DURATION + GRACE_DURATION) - timeElapsed;
+            const minutes = Math.floor(remainingGrace / 60000);
+            const seconds = Math.floor((remainingGrace % 60000) / 1000);
+            setTimeLeft({ 
+                status: "Grace", 
+                text: `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}` 
+            });
+        } else {
+            // Normal 30 Min Timer (Red)
+            const remaining = BASE_DURATION - timeElapsed;
+            const minutes = Math.floor(remaining / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+            setTimeLeft({ 
+                status: "Normal", 
+                text: `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}` 
+            });
+        }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [cart]);
 
   // Fetch user addresses on load
   useEffect(() => {
@@ -31,8 +76,8 @@ const Checkout = () => {
             .then(res => {
                 if (res.data && res.data.length > 0) {
                     setSavedAddresses(res.data);
-                    setSelectedAddress(res.data[0]); // Auto-select default
-                    setShowNewAddressForm(false); // Hide manual form
+                    setSelectedAddress(res.data[0]); 
+                    setShowNewAddressForm(false); 
                 }
             })
             .catch(err => console.error("Failed to fetch addresses", err));
@@ -48,32 +93,38 @@ const Checkout = () => {
     setLoading(true);
 
     try {
-      let formattedAddress = "";
       let customerName = "";
-      let customerPhone = ""; // FIX: New variable for phone
+      let customerPhone = "";
+      let rawAddress = "";
+      let rawCity = "";
+      let rawPincode = "";
 
-      // 1. Format Address & Extract Name/Phone based on selection
       if (showNewAddressForm) {
-          formattedAddress = `${formData.fullName}, ${formData.phone} | ${formData.address}, ${formData.city} - ${formData.pincode}`;
           customerName = formData.fullName;
-          customerPhone = formData.phone; // Extract from manual form
+          customerPhone = formData.phone;
+          rawAddress = formData.address;
+          rawCity = formData.city;
+          rawPincode = formData.pincode;
       } else if (selectedAddress) {
-          formattedAddress = `${selectedAddress.full_name}, ${selectedAddress.phone} | ${selectedAddress.address}, ${selectedAddress.city} - ${selectedAddress.pincode}`;
           customerName = selectedAddress.full_name;
-          customerPhone = selectedAddress.phone; // Extract from saved address
+          customerPhone = selectedAddress.phone;
+          rawAddress = selectedAddress.address;
+          rawCity = selectedAddress.city;
+          rawPincode = selectedAddress.pincode;
       } else {
           alert("Please provide a shipping address.");
           setLoading(false);
           return;
       }
 
-      // 2. Prepare the payload with the new phone_number field
       const orderData = {
         user_id: user ? user.id : null,
         customer_name: customerName, 
-        phone_number: customerPhone, // FIX: Added to payload
+        phone_number: customerPhone, 
+        address: rawAddress,
+        city: rawCity,
+        pincode: rawPincode,
         total_amount: cartTotal,
-        shipping_address: formattedAddress,
         payment_method: 'CASH_ON_DELIVERY',
         items: cart
       };
@@ -109,7 +160,7 @@ const Checkout = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           
-          {/* LEFT: SHIPPING FORM (New Address Cards UX) */}
+          {/* LEFT: SHIPPING FORM */}
           <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 h-fit">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
@@ -118,7 +169,6 @@ const Checkout = () => {
             
             <form id="checkout-form" onSubmit={handleSubmit}>
               
-              {/* --- SAVED ADDRESSES --- */}
               {user && savedAddresses.length > 0 && (
                  <div className="mb-6 space-y-3">
                     {savedAddresses.map(addr => (
@@ -159,7 +209,6 @@ const Checkout = () => {
                  </div>
               )}
 
-              {/* --- MANUAL ENTRY FORM --- */}
               {showNewAddressForm && (
                 <div className="space-y-4 pt-2">
                   {user && savedAddresses.length > 0 && (
@@ -205,9 +254,29 @@ const Checkout = () => {
             </form>
           </div>
 
-          {/* RIGHT: ORDER SUMMARY (Your Preferred Styling Restored) */}
+          {/* RIGHT: ORDER SUMMARY */}
           <div className="space-y-6">
             <div className="bg-white p-8 rounded-xl shadow-lg border border-gold/20 sticky top-24">
+               
+               {/* NEW: DYNAMIC COUNTDOWN BANNER */}
+               {timeLeft && timeLeft.status !== "Expired" && (
+                   <div className={`p-3.5 rounded-lg flex items-center justify-between mb-6 shadow-sm border ${
+                       timeLeft.status === 'Grace' ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'
+                   }`}>
+                       <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${
+                           timeLeft.status === 'Grace' ? 'text-orange-700' : 'text-red-700'
+                       }`}>
+                           <Clock size={16} className="animate-pulse" /> 
+                           <span>{timeLeft.status === 'Grace' ? 'Payment Grace Period' : 'Price Lock Expiring'}</span>
+                       </div>
+                       <span className={`bg-white border px-2.5 py-1 rounded shadow-sm font-mono font-bold text-sm tracking-widest ${
+                           timeLeft.status === 'Grace' ? 'border-orange-100 text-orange-700' : 'border-red-100 text-red-700'
+                       }`}>
+                           {timeLeft.text}
+                       </span>
+                   </div>
+               )}
+
                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                  <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
                  Order Summary

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { 
-  ShoppingBag, Heart, MapPin, Info, X, MessageCircle, Send, Loader2, Maximize2 
+  ShoppingBag, ShieldCheck, Heart, MapPin, Info, X, MessageCircle, Send, Loader2, Maximize2 
 } from 'lucide-react';
 import { useCart } from '../context/CartContext'; 
 import { useAuth } from '../context/AuthContext'; 
@@ -34,13 +34,17 @@ const ProductDetails = () => {
   const hesitationTimerRef = useRef(null);
   const chatEndRef = useRef(null);
   
+  // NEW: AI Spam Protection Refs
+  const proactiveOffersCount = useRef(0); // Max 2 proactive offers allowed
+  const lastExitIntentTime = useRef(0);   // Cooldown tracker for exit intent
+  
   const [showChat, setShowChat] = useState(false);
   const showChatRef = useRef(showChat); 
   const [unreadCount, setUnreadCount] = useState(0);
 
   const [userBid, setUserBid] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [onCooldown, setOnCooldown] = useState(false);
+  const [onCooldown, setOnCooldown] = useState(false); 
   const [liveBreakdown, setLiveBreakdown] = useState(null); 
   const [dealStatus, setDealStatus] = useState(null); 
   const [chatMessages, setChatMessages] = useState([]);
@@ -124,18 +128,44 @@ const ProductDetails = () => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, isTyping, showChat]);
 
-  // --- EXIT INTENT TRACKING ---
+  // --- UPGRADED: SMART EXIT INTENT & HESITATION ---
+  const resetHesitationTimer = () => {
+      if (hesitationTimerRef.current) clearTimeout(hesitationTimerRef.current);
+      if (dealStatus === 'accepted') return; 
+
+      hesitationTimerRef.current = setTimeout(() => {
+          // STRICT RULE: Only hesitate if AI hasn't already made 2 unanswered offers
+          if (socketRef.current && dealStatus !== 'accepted' && proactiveOffersCount.current < 2) {
+              socketRef.current.emit('user_hesitating');
+              proactiveOffersCount.current += 1; 
+              resetHesitationTimer(); // Reset for potential second offer
+          }
+      }, 30000); 
+  };
+
   useEffect(() => {
-      const handleVisibilityChange = () => {
-          if (document.hidden && dealStatus !== 'accepted' && socketRef.current) {
+      const triggerExitIntent = () => {
+          const now = Date.now();
+          
+          // STRICT RULE: 10-second cooldown so it doesn't spam when switching tabs rapidly
+          if (now - lastExitIntentTime.current < 10000) return; 
+
+          // STRICT RULE: Only trigger if AI hasn't already made 2 unanswered offers
+          if (dealStatus !== 'accepted' && socketRef.current && proactiveOffersCount.current < 2) {
               socketRef.current.emit('user_leaving');
+              proactiveOffersCount.current += 1;
+              lastExitIntentTime.current = now;
+              resetHesitationTimer(); // Restart silence timer so they don't overlap
           }
       };
 
+      const handleVisibilityChange = () => {
+          if (document.hidden) triggerExitIntent();
+      };
+
       const handleMouseLeave = (e) => {
-          if (e.clientY <= 0 && dealStatus !== 'accepted' && socketRef.current) {
-              socketRef.current.emit('user_leaving');
-          }
+          // Only trigger if mouse leaves through the very TOP of the browser (towards the 'X' button)
+          if (e.clientY <= 5) triggerExitIntent();
       };
 
       document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -147,24 +177,15 @@ const ProductDetails = () => {
       };
   }, [dealStatus]);
 
-  const resetHesitationTimer = () => {
-      if (hesitationTimerRef.current) clearTimeout(hesitationTimerRef.current);
-      if (dealStatus === 'accepted') return; 
-
-      hesitationTimerRef.current = setTimeout(() => {
-          if (socketRef.current && dealStatus !== 'accepted') {
-              socketRef.current.emit('user_hesitating');
-          }
-      }, 30000); 
-  };
-
+  // --- SEND MESSAGE LOGIC ---
   const handleSendMessage = () => {
-    // BLOCK if input is empty, AI is typing, on cooldown, or deal is closed
     if (!userBid.trim() || !socketRef.current || isTyping || onCooldown || dealStatus === 'accepted') return;
     
-    // Trigger the 3-second failsafe cooldown
     setOnCooldown(true);
     setTimeout(() => setOnCooldown(false), 3000);
+
+    // WIN CONDITION: The user replied! Reset the proactive offer cap back to 0.
+    proactiveOffersCount.current = 0; 
 
     setChatMessages(prev => [...prev, { sender: 'user', text: userBid }]);
     socketRef.current.emit('send_message', { text: userBid });
@@ -176,9 +197,22 @@ const ProductDetails = () => {
     const finalPrice = liveBreakdown?.final_total_price || product.price_breakdown?.final_total_price;
     const productToCart = { ...product, price_breakdown: liveBreakdown || product.price_breakdown };
     addToCart(productToCart);
-    toast.success(`Added ${product.name} to your cart! 🛍️`, {
-      style: { border: '1px solid #D4AF37', padding: '16px', color: '#000', fontWeight: 'bold' },
-    });
+    
+    // NEW: Detailed Toast with Price Lock Warning
+    toast.success(
+        (t) => (
+            <div>
+                <span className="font-bold text-gray-900">Added {product.name} at ₹{finalPrice}! 🛍️</span>
+                <p className="text-sm mt-1.5 text-gray-700 leading-snug">
+                    Your negotiated price is locked for <span className="font-extrabold text-red-600">30 minutes</span>.
+                </p>
+            </div>
+        ), 
+        { 
+            duration: 5000,
+            style: { border: '1px solid #D4AF37', padding: '16px', backgroundColor: '#fff' } 
+        }
+    );
   };
 
   const checkPincode = async () => {
@@ -279,7 +313,6 @@ const ProductDetails = () => {
           
           {/* LEFT: REDESIGNED IMAGE GALLERY WITH LENS MAGNIFIER */}
           <div className="space-y-6">
-            {/* Main Image Container */}
             <div 
               className="w-full aspect-square bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 relative group cursor-crosshair"
               onMouseEnter={() => setIsZooming(true)}
@@ -300,7 +333,6 @@ const ProductDetails = () => {
                 className="w-full h-full object-cover transition-transform duration-150 ease-out select-none"
               />
               
-              {/* Badges & Overlays */}
               <div className="absolute top-5 left-5 opacity-100 group-hover:opacity-0 transition-opacity duration-300">
                  <span className="bg-black/80 backdrop-blur-md text-gold text-[10px] font-bold px-4 py-1.5 uppercase tracking-widest rounded-full shadow-sm border border-gold/20">
                     {product.item_type.replace('_', ' ')}
@@ -314,7 +346,6 @@ const ProductDetails = () => {
               </div>
             </div>
 
-            {/* Thumbnail Strip */}
             <div className="grid grid-cols-6 gap-3">
               <button 
                 onClick={() => setActiveImage(product.main_image_url)}
@@ -347,7 +378,6 @@ const ProductDetails = () => {
               </div>
             </div>
 
-            {/* Price Box */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8 relative">
               <div className="flex items-end gap-4 mb-2">
                 <span className="text-5xl font-bold text-gray-900 tracking-tight transition-all duration-700">₹{displayPrice}</span>
@@ -369,7 +399,6 @@ const ProductDetails = () => {
               </button>
             </div>
 
-            {/* Quick Specs */}
             <div className="grid grid-cols-2 gap-4 mb-8">
                <div className="p-5 border border-gray-100 rounded-2xl bg-white flex flex-col justify-center shadow-sm hover:shadow-md transition">
                   <span className="text-[11px] text-gray-400 uppercase tracking-widest mb-1 font-semibold">Metal & Purity</span>
@@ -390,7 +419,6 @@ const ProductDetails = () => {
                </div>
             </div>
 
-            {/* Pincode Checker */}
             <div className="mb-10 bg-white border border-gray-100 p-5 rounded-2xl shadow-sm">
                <label className="text-xs font-bold text-gray-800 uppercase tracking-widest mb-4 flex items-center gap-2">
                  <MapPin size={18} className="text-gold" /> Check Delivery Availability
@@ -416,7 +444,6 @@ const ProductDetails = () => {
                )}
             </div>
 
-            {/* Action Buttons */}
             <div className="flex gap-4 mt-auto">
               <button 
                 onClick={handleAddToCart}
@@ -456,7 +483,7 @@ const ProductDetails = () => {
         </div>
       </div>
 
-      {/* --- LIVE WEBSOCKET CHAT WINDOW (Unchanged) --- */}
+      {/* --- LIVE WEBSOCKET CHAT WINDOW --- */}
       {showChat && (
         <div 
           className="fixed bottom-6 right-6 min-w-[320px] max-w-[600px] w-80 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-2xl border border-gray-100 overflow-hidden z-[100] animate-fade-in-up flex flex-col resize"
@@ -508,26 +535,18 @@ const ProductDetails = () => {
                        resetHesitationTimer(); 
                    }}
                    onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }}
-                   
-                   // DYNAMIC PLACEHOLDER: Tell the user why they can't type
                    placeholder={
                        dealStatus === 'accepted' ? "Deal Locked!" : 
                        (isTyping || onCooldown) ? "Manager is replying..." : 
                        "Your counter-offer..."
                    } 
-                   
-                   // STRICT LOCK: Disable input box completely during wait times
                    disabled={dealStatus === 'accepted' || isTyping || onCooldown}
-                   
                    className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" 
                  />
               </div>
               <button 
                 onClick={handleSendMessage} 
-                
-                // STRICT LOCK: Disable send button completely
                 disabled={isTyping || onCooldown || !userBid.trim() || dealStatus === 'accepted'}
-                
                 className={`p-3 rounded-xl transition shadow-md flex items-center justify-center ${
                     (!userBid.trim() || dealStatus === 'accepted' || isTyping || onCooldown) 
                     ? 'bg-gray-100 text-gray-300 cursor-not-allowed' 
