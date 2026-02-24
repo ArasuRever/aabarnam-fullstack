@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import axios from 'axios';
 
 const AuthContext = createContext();
@@ -6,12 +6,12 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
+  // 🛡️ THE FIX: Synchronously read from localStorage on the very first frame.
+  // This prevents the "null" flicker that kicks you out on refresh!
+  const [user, setUser] = useState(() => {
     const storedUser = localStorage.getItem('aabarnam_user');
-    if (storedUser) setUser(JSON.parse(storedUser));
-  }, []);
+    return storedUser ? JSON.parse(storedUser) : null;
+  });
 
   // 1. Updated to use "identifier" (Phone or Email) instead of just email
   const login = async (identifier, password) => {

@@ -48,11 +48,52 @@ const ProductDetails = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const [userBid, setUserBid] = useState('');
+  
+  // --- CHAT PERSISTENCE ENGINE ---
+  const CHAT_STORAGE_KEY = `aabarnam_chat_${id}`;
+  const [isChatFrozen, setIsChatFrozen] = useState(false);
+
+  // Load chat from hard drive on boot
+  useEffect(() => {
+      const savedStr = localStorage.getItem(CHAT_STORAGE_KEY);
+      if (savedStr) {
+          const savedData = JSON.parse(savedStr);
+          if (Date.now() - savedData.lastActivity > 10 * 60 * 1000) {
+              // Idle for > 10 mins! Freeze the chat.
+              setIsChatFrozen(true);
+              setChatMessages(savedData.messages); 
+          } else {
+              // Resume chat seamlessly
+              setChatMessages(savedData.messages);
+              if (savedData.dealStatus) setDealStatus(savedData.dealStatus);
+              if (savedData.liveBreakdown) setLiveBreakdown(savedData.liveBreakdown);
+          }
+      }
+  }, [id]);
+
   const [isTyping, setIsTyping] = useState(false);
   const [onCooldown, setOnCooldown] = useState(false); 
   const [liveBreakdown, setLiveBreakdown] = useState(null); 
   const [dealStatus, setDealStatus] = useState(null); 
   const [chatMessages, setChatMessages] = useState([]);
+
+  // Save chat to hard drive on every new message
+  useEffect(() => {
+      if (chatMessages.length > 0 && !isChatFrozen) {
+          localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
+              messages: chatMessages,
+              dealStatus,
+              liveBreakdown,
+              lastActivity: Date.now()
+          }));
+      }
+  }, [chatMessages, dealStatus, liveBreakdown, isChatFrozen]);
+
+  // The "Start Fresh" button action
+  const handleRestartChat = () => {
+      localStorage.removeItem(CHAT_STORAGE_KEY);
+      window.location.reload(); 
+  };
 
   useEffect(() => { showChatRef.current = showChat; if (showChat) setUnreadCount(0); }, [showChat]);
 
@@ -63,7 +104,6 @@ const ProductDetails = () => {
         const prodRes = await axios.get(`http://localhost:5000/api/products/${id}`);
         setProduct(prodRes.data);
         
-        // Combine main image and gallery into one array for easy navigation
         const images = [prodRes.data.main_image_url, ...(prodRes.data.gallery_images?.map(img => img.url) || [])].filter(Boolean);
         setAllImages(images);
 
@@ -75,11 +115,9 @@ const ProductDetails = () => {
             });
         }
 
-        // Fetch Reviews
         const reviewsRes = await axios.get(`http://localhost:5000/api/products/${id}/reviews`);
         setReviews(reviewsRes.data);
 
-        // Check if user bought it
         if (user) {
             const eligRes = await axios.get(`http://localhost:5000/api/products/${id}/eligibility/${user.id}`);
             setReviewEligibility(eligRes.data);
@@ -93,9 +131,16 @@ const ProductDetails = () => {
 
   // --- WEBSOCKET INITIALIZATION ---
   useEffect(() => {
-    if (!socketRef.current) {
+    if (!socketRef.current && !isChatFrozen) {
       socketRef.current = io('http://localhost:5000');
-      socketRef.current.on('connect', () => socketRef.current.emit('start_negotiation', { product_id: id }));
+      
+      socketRef.current.on('connect', () => {
+          // Send history to backend to resume context!
+          const savedStr = localStorage.getItem(CHAT_STORAGE_KEY);
+          const history = savedStr ? JSON.parse(savedStr).messages : [];
+          socketRef.current.emit('start_negotiation', { product_id: id, history });
+      });
+
       socketRef.current.on('system_message', (data) => {
           setChatMessages(prev => [...prev, { sender: 'bot', text: data.text }]);
           if (!showChatRef.current) setUnreadCount(prev => prev + 1); 
@@ -117,7 +162,7 @@ const ProductDetails = () => {
               making_charge: data.newBreakdown.making_charge !== undefined ? data.newBreakdown.making_charge : prev.making_charge,
               wastage_value: data.newBreakdown.wastage_value !== undefined ? data.newBreakdown.wastage_value : prev.wastage_value,
               final_total_price: data.newBreakdown.final_total_price,
-              deal_token: data.deal_token || prev?.deal_token // NEW: Store the token in the state
+              deal_token: data.deal_token || prev?.deal_token 
           }));
           
           resetHesitationTimer();
@@ -130,13 +175,13 @@ const ProductDetails = () => {
             clearTimeout(hesitationTimerRef.current);
         }
     };
-  }, [id]);
+  }, [id, isChatFrozen]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages, isTyping, showChat]);
 
   const resetHesitationTimer = () => {
       if (hesitationTimerRef.current) clearTimeout(hesitationTimerRef.current);
-      if (dealStatus === 'accepted') return; 
+      if (dealStatus === 'accepted' || isChatFrozen) return; 
       hesitationTimerRef.current = setTimeout(() => {
           if (socketRef.current && dealStatus !== 'accepted' && proactiveOffersCount.current < 2) {
               socketRef.current.emit('user_hesitating');
@@ -150,7 +195,7 @@ const ProductDetails = () => {
       const triggerExitIntent = () => {
           const now = Date.now();
           if (now - lastExitIntentTime.current < 10000) return; 
-          if (dealStatus !== 'accepted' && socketRef.current && proactiveOffersCount.current < 2) {
+          if (dealStatus !== 'accepted' && !isChatFrozen && socketRef.current && proactiveOffersCount.current < 2) {
               socketRef.current.emit('user_leaving');
               proactiveOffersCount.current += 1;
               lastExitIntentTime.current = now;
@@ -165,10 +210,10 @@ const ProductDetails = () => {
           document.removeEventListener("visibilitychange", handleVisibilityChange);
           document.removeEventListener("mouseleave", handleMouseLeave);
       };
-  }, [dealStatus]);
+  }, [dealStatus, isChatFrozen]);
 
   const handleSendMessage = () => {
-    if (!userBid.trim() || !socketRef.current || isTyping || onCooldown || dealStatus === 'accepted') return;
+    if (!userBid.trim() || !socketRef.current || isTyping || onCooldown || dealStatus === 'accepted' || isChatFrozen) return;
     setOnCooldown(true);
     setTimeout(() => setOnCooldown(false), 3000);
     proactiveOffersCount.current = 0; 
@@ -185,7 +230,8 @@ const ProductDetails = () => {
 
     const productToCart = { 
         ...product, 
-        deal_token: liveBreakdown?.deal_token || null, // NEW: Attach token to the cart item
+        deal_token: liveBreakdown?.deal_token || null,
+        chat_transcript: chatMessages, // 🌟 RECORD CHAT TO DATABASE VIA CART
         price_breakdown: {
             ...liveBreakdown,
             original_price: originalPrice,
@@ -238,7 +284,6 @@ const ProductDetails = () => {
           });
           toast.success("Review published successfully!");
           
-          // Refresh reviews & eligibility
           const reviewsRes = await axios.get(`http://localhost:5000/api/products/${id}/reviews`);
           setReviews(reviewsRes.data);
           const eligRes = await axios.get(`http://localhost:5000/api/products/${id}/eligibility/${user.id}`);
@@ -248,11 +293,9 @@ const ProductDetails = () => {
       } finally { setSubmittingReview(false); }
   };
 
-  // --- IMAGE NAVIGATION LOGIC ---
   const nextImg = (e) => { e?.stopPropagation(); setCurrentImgIndex((prev) => (prev + 1) % allImages.length); };
   const prevImg = (e) => { e?.stopPropagation(); setCurrentImgIndex((prev) => (prev - 1 + allImages.length) % allImages.length); };
   
-  // Magnifier is ONLY active in Fullscreen mode now
   const handleMouseMove = (e) => {
     if (!showFullscreen) return;
     const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
@@ -285,7 +328,6 @@ const ProductDetails = () => {
              </>
            )}
 
-           {/* MAGNIFIER LOGIC LIVES HERE NOW */}
            <div 
               className="relative w-[80vw] h-[80vh] cursor-crosshair overflow-hidden flex items-center justify-center"
               onMouseEnter={() => setIsZooming(true)}
@@ -316,7 +358,7 @@ const ProductDetails = () => {
                     <span className="font-medium">₹{parseFloat(liveBreakdown.raw_metal_value).toFixed(2)}</span>
                  </div>
                  <div className="flex justify-between text-gray-600 transition-colors duration-500">
-                    <span>Wastage (VA) <br/>
+                    <span>Value Addition (VA) <br/>
                         <span className="text-[11px] text-gray-400">
                             ({liveBreakdown.wastage_pct !== undefined ? parseFloat(liveBreakdown.wastage_pct).toFixed(1) : parseFloat(product.wastage_pct).toFixed(1)}% Dynamic)
                         </span>
@@ -347,12 +389,10 @@ const ProductDetails = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
           
-          {/* LEFT: REDESIGNED GALLERY WITHOUT JUMPY MAGNIFIER */}
           <div className="space-y-6">
             <div className="relative w-full aspect-square bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 group cursor-pointer" onClick={() => setShowFullscreen(true)}>
               <img src={allImages[currentImgIndex]} alt={product.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
               
-              {/* Image Navigation Overlays */}
               {allImages.length > 1 && (
                  <>
                     <button onClick={prevImg} className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full shadow hover:bg-white text-gray-800 opacity-0 group-hover:opacity-100 transition duration-300 z-10"><ChevronLeft size={24}/></button>
@@ -389,14 +429,12 @@ const ProductDetails = () => {
               <div className="flex items-center gap-6">
                  <p className="text-gray-500 text-sm font-mono bg-gray-100 px-3 py-1 rounded-md tracking-wider">SKU: {product.sku}</p>
                  
-                 {/* DYNAMIC STAR RATING */}
                  <div className="flex text-gold text-sm tracking-widest items-center">
                     {Array.from({ length: 5 }).map((_, i) => (
                         <Star key={i} size={16} fill={i < Math.round(avgRating) ? "currentColor" : "none"} className={i < Math.round(avgRating) ? "text-gold" : "text-gray-300"} />
                     ))}
                     <span className="text-gray-500 ml-2 tracking-normal text-xs font-bold font-sans">({reviews.length} Reviews)</span>
                  </div>
-
               </div>
             </div>
 
@@ -465,7 +503,7 @@ const ProductDetails = () => {
                 <ShoppingBag size={22} className="text-gold group-hover:scale-110 transition-transform" /> Add to Cart — ₹{displayPrice}
               </button>
               
-              <button onClick={() => { setShowChat(!showChat); if (!showChat) { setShowBreakdown(true); setUnreadCount(0); } }} className={`relative w-[72px] h-[72px] rounded-2xl flex items-center justify-center shadow-lg transition-all active:scale-95 border ${showChat ? 'bg-black text-gold border-black' : 'bg-white text-black border-gray-200 hover:border-gold'}`} title="Bargain with Manager">
+              <button onClick={() => { setShowChat(!showChat); if (!showChat) { setShowBreakdown(true); setUnreadCount(0); } }} className={`relative w-[72px] h-[72px] rounded-2xl flex items-center justify-center shadow-lg transition-all active:scale-95 border ${showChat ? 'bg-black text-gold border-black' : 'bg-white text-black border-gray-200 hover:border-gold'}`} title="Bargain with AURA">
                  <MessageCircle size={28} />
                  {unreadCount > 0 && !showChat && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full animate-bounce shadow-md border-2 border-white">{unreadCount}</span>}
               </button>
@@ -557,7 +595,7 @@ const ProductDetails = () => {
         <div className="fixed bottom-6 right-6 min-w-[320px] max-w-[600px] w-80 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-2xl border border-gray-100 overflow-hidden z-[100] animate-fade-in-up flex flex-col resize" style={{ height: '480px', direction: 'rtl' }}>
           <div className="flex flex-col h-full w-full" style={{ direction: 'ltr' }}>
             <div className="bg-gradient-to-r from-gray-900 to-black p-4 text-white flex justify-between items-center border-b border-gray-800">
-              <div className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div><span className="font-bold text-sm tracking-wide">Store Manager</span></div>
+              <div className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div><span className="font-bold text-sm tracking-wide">AURA OF AABARNAM</span></div>
               <button onClick={() => setShowChat(false)} className="hover:text-gold transition bg-white/10 p-1.5 rounded-lg"><X size={16} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#f8f9fa] flex flex-col">
@@ -572,12 +610,24 @@ const ProductDetails = () => {
               )}
               <div ref={chatEndRef} />
             </div>
+            
             <div className="p-3 border-t bg-white flex gap-2 items-center">
-              <div className="relative flex-1">
-                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm z-10 pointer-events-none">₹</span>
-                 <input type="text" value={userBid} onChange={(e) => { setUserBid(e.target.value); resetHesitationTimer(); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} placeholder={dealStatus === 'accepted' ? "Deal Locked!" : (isTyping || onCooldown) ? "Manager is replying..." : "Your counter-offer..."} disabled={dealStatus === 'accepted' || isTyping || onCooldown} className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" />
-              </div>
-              <button onClick={handleSendMessage} disabled={isTyping || onCooldown || !userBid.trim() || dealStatus === 'accepted'} className={`p-3 rounded-xl transition shadow-md flex items-center justify-center ${(!userBid.trim() || dealStatus === 'accepted' || isTyping || onCooldown) ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-black text-gold hover:bg-gray-800 hover:-translate-y-0.5'}`}><Send size={20} /></button>
+                {isChatFrozen ? (
+                    <div className="text-center w-full">
+                        <p className="text-xs text-red-500 font-bold mb-2">Session expired due to inactivity.</p>
+                        <button onClick={handleRestartChat} className="w-full bg-black text-gold py-2 rounded-xl text-sm font-bold shadow-md hover:bg-gray-800 transition">
+                            Start New Negotiation
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                      <div className="relative flex-1">
+                         <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm z-10 pointer-events-none">₹</span>
+                         <input type="text" value={userBid} onChange={(e) => { setUserBid(e.target.value); resetHesitationTimer(); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} placeholder={dealStatus === 'accepted' ? "Deal Locked!" : (isTyping || onCooldown) ? "AURA is replying..." : "Your counter-offer..."} disabled={dealStatus === 'accepted' || isTyping || onCooldown} className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" />
+                      </div>
+                      <button onClick={handleSendMessage} disabled={isTyping || onCooldown || !userBid.trim() || dealStatus === 'accepted'} className={`p-3 rounded-xl transition shadow-md flex items-center justify-center ${(!userBid.trim() || dealStatus === 'accepted' || isTyping || onCooldown) ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-black text-gold hover:bg-gray-800 hover:-translate-y-0.5'}`}><Send size={20} /></button>
+                    </>
+                )}
             </div>
           </div>
         </div>
