@@ -2,13 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
+const { verifyAdmin } = require('../middleware/authMiddleware');
 
 const pool = new Pool({
     user: process.env.DB_USER, password: process.env.DB_PASSWORD,
     host: process.env.DB_HOST, port: process.env.DB_PORT, database: process.env.DB_NAME,
 });
 
-router.get('/', async (req, res) => {
+// SECURED: Only Admins can see all orders
+router.get('/', verifyAdmin, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM orders ORDER BY created_at DESC');
         res.json(result.rows);
@@ -143,7 +145,8 @@ router.post('/', async (req, res) => {
     }
 });
 
-router.put('/:id/payment', async (req, res) => {
+// SECURED: Only Admins can change payment status
+router.put('/:id/payment', verifyAdmin, async (req, res) => {
     try {
         await pool.query('UPDATE orders SET payment_status = $1 WHERE id = $2', [req.body.payment_status, req.params.id]);
         res.json({ message: 'Payment status updated' });
@@ -176,8 +179,8 @@ router.put('/:id/status', async (req, res) => {
     } finally { client.release(); }
 });
 
-// NEW: Fetch Pending Reshelf Items for Admin
-router.get('/inventory/reshelf', async (req, res) => {
+// SECURED: Only Admins can see the reshelf queue
+router.get('/inventory/reshelf', verifyAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT oi.*, o.customer_name, o.status as order_status, p.main_image_url
@@ -196,8 +199,8 @@ router.get('/inventory/reshelf', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// NEW: Action a Reshelf Item
-router.put('/inventory/reshelf/:itemId', async (req, res) => {
+// SECURED: Only Admins can action the reshelf queue
+router.put('/inventory/reshelf/:itemId', verifyAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');

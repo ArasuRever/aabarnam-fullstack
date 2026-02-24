@@ -2,13 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 const axios = require('axios');
+const { verifyAdmin } = require('../middleware/authMiddleware'); // 🛡️ Bouncer Imported
 
 const pool = new Pool({
     user: process.env.DB_USER, password: process.env.DB_PASSWORD,
     host: process.env.DB_HOST, port: process.env.DB_PORT, database: process.env.DB_NAME,
 });
 
-// GET /api/rates - Fetch all current retail rates
+// PUBLIC: GET all current retail rates
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM metal_rates ORDER BY metal_type ASC');
@@ -16,8 +17,8 @@ router.get('/', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Failed to fetch rates' }); }
 });
 
-// POST /api/rates - Manual Override
-router.post('/', async (req, res) => {
+// 🛡️ SECURED: Manual Override
+router.post('/', verifyAdmin, async (req, res) => {
     const { rates } = req.body; 
     const client = await pool.connect();
     try {
@@ -104,8 +105,8 @@ const syncMarketRates = async (retailPremiumPct = 3) => {
 
 // --- BACKGROUND TIMER LOGIC ---
 let autoSyncTimer = null;
-let autoSyncIntervalHours = 1; // Default to 1 hour
-let autoSyncPremium = 3.0;     // Default 3%
+let autoSyncIntervalHours = 1; 
+let autoSyncPremium = 3.0;     
 
 const startAutoSync = () => {
     if (autoSyncTimer) clearInterval(autoSyncTimer);
@@ -121,25 +122,25 @@ const startAutoSync = () => {
         console.log("⏸️ Background Auto-Sync Disabled.");
     }
 };
-startAutoSync(); // Initialize on boot
+startAutoSync(); 
 
-// GET Current Config
+// PUBLIC: GET Current Config
 router.get('/config', (req, res) => {
     res.json({ interval: autoSyncIntervalHours, premium: autoSyncPremium });
 });
 
-// POST Update Config
-router.post('/config', (req, res) => {
+// 🛡️ SECURED: POST Update Config
+router.post('/config', verifyAdmin, (req, res) => {
     const { interval, premium } = req.body;
     if (interval !== undefined) autoSyncIntervalHours = parseFloat(interval);
     if (premium !== undefined) autoSyncPremium = parseFloat(premium);
     
-    startAutoSync(); // Restart the timer with new settings
+    startAutoSync(); 
     res.json({ message: "Background sync settings updated!" });
 });
 
-// On-Demand Sync Route
-router.post('/sync', async (req, res) => {
+// 🛡️ SECURED: On-Demand Sync Route
+router.post('/sync', verifyAdmin, async (req, res) => {
     const { premium } = req.body;
     const result = await syncMarketRates(premium || autoSyncPremium);
     if (result.success) {

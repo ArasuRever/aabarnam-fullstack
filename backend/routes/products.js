@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 const multer = require('multer');
+const { verifyAdmin } = require('../middleware/authMiddleware'); // 🛡️ Bouncer Imported
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -14,7 +15,7 @@ const pool = new Pool({
     database: process.env.DB_NAME,
 });
 
-// 1. GET ALL PRODUCTS (List View)
+// PUBLIC: GET ALL PRODUCTS (List View)
 router.get('/', async (req, res) => {
     try {
         const { inStock } = req.query;
@@ -68,7 +69,8 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/', upload.array('images'), async (req, res) => {
+// 🛡️ SECURED: ADD PRODUCT
+router.post('/', verifyAdmin, upload.array('images'), async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -112,7 +114,8 @@ router.post('/', upload.array('images'), async (req, res) => {
     } finally { client.release(); }
 });
 
-router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'new_gallery_images' }]), async (req, res) => {
+// 🛡️ SECURED: EDIT PRODUCT
+router.put('/:id', verifyAdmin, upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'new_gallery_images' }]), async (req, res) => {
     const { id } = req.params;
     const client = await pool.connect();
 
@@ -165,13 +168,15 @@ router.put('/:id', upload.fields([{ name: 'thumbnail', maxCount: 1 }, { name: 'n
     }
 });
 
-router.delete('/:id', async (req, res) => {
+// 🛡️ SECURED: DELETE PRODUCT
+router.delete('/:id', verifyAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
         res.json({ message: "Deleted" });
     } catch (err) { res.status(500).json({ error: 'Delete error' }); }
 });
 
+// PUBLIC: GET PRODUCT DETAILS (Used on the store)
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -254,7 +259,7 @@ router.get('/:id', async (req, res) => {
 // REVIEWS & RATINGS LOGIC
 // ==========================================
 
-// GET all reviews for a product
+// PUBLIC: GET all reviews for a product
 router.get('/:id/reviews', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -268,12 +273,11 @@ router.get('/:id/reviews', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// GET eligibility (Did this specific user buy this specific item?)
+// PUBLIC: GET eligibility
 router.get('/:id/eligibility/:userId', async (req, res) => {
     try {
         const { id, userId } = req.params;
         
-        // Check if item exists in their order history
         const orderCheck = await pool.query(`
             SELECT o.id 
             FROM orders o 
@@ -282,7 +286,6 @@ router.get('/:id/eligibility/:userId', async (req, res) => {
             LIMIT 1
         `, [userId, id]);
         
-        // Check if they already reviewed it (1 review per item per user)
         const reviewCheck = await pool.query('SELECT id FROM reviews WHERE user_id = $1 AND product_id = $2', [userId, id]);
 
         res.json({ 
@@ -293,7 +296,7 @@ router.get('/:id/eligibility/:userId', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// POST a new Verified Review
+// PUBLIC: POST a new Verified Review (User Auth handled by the frontend login state)
 router.post('/:id/reviews', async (req, res) => {
     try {
         const { id } = req.params;
