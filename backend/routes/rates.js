@@ -44,7 +44,7 @@ router.post('/', verifyAdmin, async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// 🔥 THE DYNAMIC MARKET SYNC ENGINE
+// 🔥 THE DYNAMIC MARKET SYNC ENGINE (UPDATED API)
 // ------------------------------------------------------------------
 
 const syncMarketRates = async (retailPremiumPct = 3) => {
@@ -53,13 +53,18 @@ const syncMarketRates = async (retailPremiumPct = 3) => {
         let rawSilverRate = 0;
 
         try {
-            const goldRes = await axios.get('https://open.er-api.com/v6/latest/XAU');
-            const silverRes = await axios.get('https://open.er-api.com/v6/latest/XAG');
-            raw24kRate = goldRes.data.rates.INR / 31.1034768;
-            rawSilverRate = silverRes.data.rates.INR / 31.1034768;
+            // UPDATED: Using a reliable, open-source currency CDN for precious metals
+            const goldRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xau.json');
+            const silverRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xag.json');
+            
+            // The API returns the price of 1 Troy Ounce (XAU/XAG) in INR.
+            // 1 Troy Ounce = 31.1034768 grams.
+            raw24kRate = goldRes.data.xau.inr / 31.1034768;
+            rawSilverRate = silverRes.data.xag.inr / 31.1034768;
         } catch (apiError) {
-            raw24kRate = 15818; // Approx Salem 24K Rate
-            rawSilverRate = 270; // Approx Salem Silver Rate
+            console.warn("Live API failed, using fallback modern baseline...");
+            raw24kRate = 7400; // Modern Failsafe 24K Rate
+            rawSilverRate = 90; // Modern Failsafe Silver Rate
         }
 
         const pure24k = parseFloat(raw24kRate.toFixed(2));
@@ -147,6 +152,51 @@ router.post('/sync', verifyAdmin, async (req, res) => {
         res.json({ message: "Live Market Sync Successful!", data: result.rates });
     } else {
         res.status(500).json({ error: "Failed to sync with live market." });
+    }
+});
+
+// ------------------------------------------------------------------
+// 🔥 REGIONAL BULLION ENGINE (UPDATED API)
+// ------------------------------------------------------------------
+router.get('/regional-bullion', verifyAdmin, async (req, res) => {
+    try {
+        let raw24kRate = 0;
+        let rawSilverRate = 0;
+        try {
+            // UPDATED API
+            const goldRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xau.json');
+            const silverRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xag.json');
+            raw24kRate = goldRes.data.xau.inr / 31.1034768; 
+            rawSilverRate = silverRes.data.xag.inr / 31.1034768;
+        } catch (apiError) {
+            raw24kRate = 7400; // Modern baseline
+            rawSilverRate = 90; 
+        }
+
+        // Apply Indian Physical Market Math (~6% Import Duty + Local Premium)
+        const indianBase24k = raw24kRate * 1.0811; 
+        const indianBaseSilver = rawSilverRate * 1.06;
+
+        const generateCityRates = (offset) => {
+            const city24k = indianBase24k + offset;
+            return {
+                '24K_GOLD': city24k.toFixed(2),
+                '22K_GOLD': (city24k * 0.916).toFixed(2),
+                '18K_GOLD': (city24k * 0.750).toFixed(2),
+                'SILVER': (indianBaseSilver + (offset * 0.01)).toFixed(2)
+            };
+        };
+
+        res.json({
+            timestamp: new Date().toISOString(),
+            markets: {
+                'Chennai': generateCityRates(15),     
+                'Salem': generateCityRates(5),        
+                'Coimbatore': generateCityRates(10)   
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch regional bullion' });
     }
 });
 
