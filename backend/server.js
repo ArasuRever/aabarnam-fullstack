@@ -8,10 +8,10 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app); // NEW: Wrap Express in HTTP server
 
-// NEW: Initialize Socket.io
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173", // Update to your frontend port if different
+        // Allows both the Admin app and Client app to connect!
+        origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"], 
         methods: ["GET", "POST"]
     }
 });

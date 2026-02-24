@@ -68,8 +68,12 @@ router.post('/', async (req, res) => {
             if (item.deal_token) {
                 try {
                     const decoded = jwt.verify(item.deal_token, process.env.JWT_SECRET || 'aabarnam_secret_fallback');
-                    if (decoded.productId === item.id) {
+                    
+                    // 🛡️ THE FIX: Convert both IDs to Strings so "5" matches 5!
+                    if (String(decoded.productId) === String(item.id)) {
                         validAuthorizedPrice = decoded.agreedPrice; // Token is valid, AI authorized this!
+                    } else {
+                        console.error(`🚨 Token ID Mismatch: Token has ${decoded.productId}, Cart has ${item.id}`);
                     }
                 } catch (err) {
                     console.warn(`[SECURITY] Invalid or expired deal token for Item ${item.id}`);
@@ -204,7 +208,7 @@ router.put('/inventory/reshelf/:itemId', verifyAdmin, async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { action } = req.body; // 'RESTOCK' or 'HOLD'
+        const { action } = req.body; // 'RESTOCK' or 'HOLD' 
         const itemId = req.params.itemId;
 
         const itemRes = await client.query('SELECT product_id, quantity FROM order_items WHERE id = $1', [itemId]);
