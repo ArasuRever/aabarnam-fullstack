@@ -37,6 +37,7 @@ router.post('/', async (req, res) => {
 
         let generatedOrderId; 
 
+        // SAVES PAYMENT STATUS AS PENDING
         const orderRes = await client.query(
             'INSERT INTO orders (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
             [user_id, customer_name, phone_number, total_amount, 'PENDING', address, city, pincode, payment_method, 'PENDING']

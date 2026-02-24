@@ -14,49 +14,40 @@ const pool = new Pool({
     database: process.env.DB_NAME,
 });
 
+// 1. GET ALL PRODUCTS (List View)
 router.get('/', async (req, res) => {
     try {
-        const productsResult = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
-        const ratesResult = await pool.query('SELECT metal_type, rate_per_gram FROM metal_rates');
-        
-        const liveRates = {};
-        ratesResult.rows.forEach(r => liveRates[r.metal_type] = parseFloat(r.rate_per_gram));
-
         const { inStock } = req.query;
         let queryStr = 'SELECT * FROM products';
         
-        // NEW: Filter out sold items if requested by the client
         if (inStock === 'true') {
             queryStr += ' WHERE stock_quantity > 0';
         }
         queryStr += ' ORDER BY created_at DESC';
 
-        const products = productsResult.rows.map(product => {
-            let finalPrice;
-            
-            // DYNAMIC VS FIXED PRICING LOGIC
-            if (product.retail_price_type === 'FIXED') {
-                finalPrice = parseFloat(product.fixed_price).toFixed(2);
-            } else {
-                const metalRate = liveRates[product.metal_type] || 0;
-                const netWeight = parseFloat(product.net_weight);
-                const makingCharge = parseFloat(product.making_charge);
-                const wastagePct = parseFloat(product.wastage_pct);
-                
-                const rawMetalValue = netWeight * metalRate;
-                const wastageValue = (rawMetalValue * wastagePct) / 100;
-                
-                let actualMakingCharge = parseFloat(product.making_charge || 0);
-                if (product.making_charge_type === 'PERCENTAGE') {
-                    actualMakingCharge = (rawMetalValue * actualMakingCharge) / 100;
-                } else if (product.making_charge_type === 'PER_GRAM') {
-                    actualMakingCharge = netWeight * actualMakingCharge;
-                }
+        const productsResult = await pool.query(queryStr);
+        const ratesResult = await pool.query('SELECT metal_type, rate_per_gram FROM metal_rates');
+        
+        const liveRates = {};
+        ratesResult.rows.forEach(r => liveRates[r.metal_type] = parseFloat(r.rate_per_gram));
 
-                const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
-                const gstAmount = subtotal * 0.03;
-                finalPrice = (subtotal + gstAmount).toFixed(2);
+        const products = productsResult.rows.map(product => {
+            const metalRate = liveRates[product.metal_type] || 0;
+            const netWeight = parseFloat(product.net_weight);
+            const makingCharge = parseFloat(product.making_charge);
+            const wastagePct = parseFloat(product.wastage_pct);
+            
+            const rawMetalValue = netWeight * metalRate;
+            const wastageValue = (rawMetalValue * wastagePct) / 100;
+            
+            let actualMakingCharge = makingCharge;
+            if (product.making_charge_type === 'PERCENTAGE') {
+                actualMakingCharge = (rawMetalValue * makingCharge) / 100;
             }
+
+            const subtotal = rawMetalValue + wastageValue + actualMakingCharge;
+            const gstAmount = subtotal * 0.03;
+            const finalPrice = (subtotal + gstAmount).toFixed(2);
 
             let mainImage = null;
             if (product.main_image_url) {
