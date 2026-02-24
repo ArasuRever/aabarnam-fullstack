@@ -1,19 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const { verifyAdmin } = require('../middleware/authMiddleware');
 
 const pool = new Pool({
     user: process.env.DB_USER, password: process.env.DB_PASSWORD, host: process.env.DB_HOST, port: process.env.DB_PORT, database: process.env.DB_NAME,
 });
 
-router.get('/', async (req, res) => {
+// 🛡️ SECURED: Only Admins can fetch the massive list of all customers
+router.get('/', verifyAdmin, async (req, res) => {
     try {
         const result = await pool.query("SELECT id, name, email, phone, created_at FROM users WHERE role = 'CUSTOMER' ORDER BY created_at DESC");
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: 'Failed to fetch users' }); }
 });
 
-router.get('/:id', async (req, res) => {
+// 🛡️ SECURED: Only Admins can view a deep customer profile from the CRM
+router.get('/:id', verifyAdmin, async (req, res) => {
     const userId = req.params.id;
     try {
         const userRes = await pool.query('SELECT id, name, email, phone, created_at FROM users WHERE id = $1', [userId]);

@@ -105,17 +105,21 @@ const ProductDetails = () => {
       socketRef.current.on('price_update', (data) => {
           setChatMessages(prev => [...prev, { sender: 'bot', text: data.message }]);
           if (!showChatRef.current) setUnreadCount(prev => prev + 1); 
+
           if (data.status === 'accepted') {
               setDealStatus('accepted');
               toast.success("Deal Accepted! Price locked in.", { icon: '🤝' });
           }
+
           setLiveBreakdown(prev => ({
               ...prev,
               wastage_pct: data.newBreakdown.wastage_pct !== undefined ? data.newBreakdown.wastage_pct : prev.wastage_pct,
               making_charge: data.newBreakdown.making_charge !== undefined ? data.newBreakdown.making_charge : prev.making_charge,
               wastage_value: data.newBreakdown.wastage_value !== undefined ? data.newBreakdown.wastage_value : prev.wastage_value,
-              final_total_price: data.newBreakdown.final_total_price
+              final_total_price: data.newBreakdown.final_total_price,
+              deal_token: data.deal_token || prev?.deal_token // NEW: Store the token in the state
           }));
+          
           resetHesitationTimer();
       });
     }
@@ -178,16 +182,25 @@ const ProductDetails = () => {
     const finalPrice = liveBreakdown?.final_total_price || product.price_breakdown?.final_total_price;
     const originalPrice = product.price_breakdown?.final_total_price;
     const discount = originalPrice - finalPrice;
+
     const productToCart = { 
         ...product, 
-        price_breakdown: { ...liveBreakdown, original_price: originalPrice, negotiated_discount: discount > 0 ? discount : 0 } 
+        deal_token: liveBreakdown?.deal_token || null, // NEW: Attach token to the cart item
+        price_breakdown: {
+            ...liveBreakdown,
+            original_price: originalPrice,
+            negotiated_discount: discount > 0 ? discount : 0
+        } 
     };
+    
     addToCart(productToCart);
     toast.success(
         (t) => (
             <div>
                 <span className="font-bold text-gray-900">Added {product.name} at ₹{finalPrice}! 🛍️</span>
-                <p className="text-sm mt-1.5 text-gray-700 leading-snug">Your negotiated price is locked for <span className="font-extrabold text-red-600">30 minutes</span>.</p>
+                <p className="text-sm mt-1.5 text-gray-700 leading-snug">
+                    Your negotiated price is locked for <span className="font-extrabold text-red-600">30 minutes</span>.
+                </p>
             </div>
         ), 
         { duration: 5000, style: { border: '1px solid #D4AF37', padding: '16px', backgroundColor: '#fff' } }

@@ -1,10 +1,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const jwt = require('jsonwebtoken'); // NEW: Import JWT
 
 module.exports = (io, pool) => {
     const apiKey = process.env.GEMINI_API_KEY;
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    // AI Tool is simplified: It ONLY decides the final price. The server does the exact math.
     const negotiationTool = {
         name: "update_live_price",
         description: "Updates the frontend UI instantly with a new negotiated price.",
@@ -20,7 +20,7 @@ module.exports = (io, pool) => {
     };
 
     io.on('connection', (socket) => {
-        let sessionData = { chatSession: null, floorPrice: 0, listedPrice: 0, baseMetalValue: 0, actualMakingCharge: 0, isDealClosed: false };
+        let sessionData = { chatSession: null, productId: null, floorPrice: 0, listedPrice: 0, baseMetalValue: 0, actualMakingCharge: 0, isDealClosed: false };
 
         socket.on('start_negotiation', async ({ product_id }) => {
             try {
@@ -58,8 +58,8 @@ module.exports = (io, pool) => {
                 const gst = subtotal * 0.03;
                 const listedPrice = Math.round(subtotal + gst);
 
-                // We store the locked making charge to prevent it from changing
-                sessionData = { floorPrice: absoluteMinimum, listedPrice: listedPrice, baseMetalValue: retailMetalValue, actualMakingCharge: actualMakingCharge, isDealClosed: false };
+                // Added productId to session data
+                sessionData = { productId: product_id, floorPrice: absoluteMinimum, listedPrice: listedPrice, baseMetalValue: retailMetalValue, actualMakingCharge: actualMakingCharge, isDealClosed: false };
 
                 const systemPrompt = `You are a polite but shrewd Indian jewelry store manager for 'Aabarnam'.
 - Product: ${product.name}
@@ -132,23 +132,32 @@ STRICT NEGOTIATION RULES:
                 aiDecision.status = "negotiating";
             }
 
-            if (aiDecision.status === 'accepted') sessionData.isDealClosed = true;
+            let dealToken = null; // NEW: The encrypted token
 
-            // PERFECT MATH REVERSE-ENGINEERING: 
-            // We calculate the exact Wastage reduction required to hit the AI's final price, 
-            // while keeping the Making Charge completely fixed!
+            if (aiDecision.status === 'accepted') {
+                sessionData.isDealClosed = true;
+                
+                // NEW: Sign the deal using JWT. It proves the backend agreed to this price.
+                dealToken = jwt.sign(
+                    { productId: sessionData.productId, agreedPrice: finalPrice },
+                    process.env.JWT_SECRET || 'aabarnam_secret_fallback',
+                    { expiresIn: '1h' } // Deal is only valid for 1 hour!
+                );
+            }
+
             const newSubtotal = finalPrice / 1.03;
             let newWastageValue = newSubtotal - sessionData.baseMetalValue - sessionData.actualMakingCharge;
-            if (newWastageValue < 0) newWastageValue = 0; // Failsafe
+            if (newWastageValue < 0) newWastageValue = 0; 
             let newWastagePct = (newWastageValue / sessionData.baseMetalValue) * 100;
 
             socket.emit('price_update', {
                 message: aiDecision.message,
                 status: aiDecision.status,
+                deal_token: dealToken, // Send token to frontend
                 newBreakdown: {
                     wastage_pct: newWastagePct.toFixed(2),
                     wastage_value: newWastageValue.toFixed(2),
-                    making_charge: sessionData.actualMakingCharge.toFixed(2), // LOCKS THE MAKING CHARGE
+                    making_charge: sessionData.actualMakingCharge.toFixed(2),
                     final_total_price: finalPrice
                 }
             });

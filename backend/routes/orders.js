@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
 
 const pool = new Pool({
     user: process.env.DB_USER, password: process.env.DB_PASSWORD,
@@ -29,15 +30,74 @@ router.get('/my-orders/:userId', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// POST /api/orders - Create new order (SECURED & TAMPER-PROOF)
 router.post('/', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
+        
         const { user_id, customer_name, phone_number, total_amount, address, city, pincode, payment_method, items } = req.body;
+
+        // ---------------------------------------------------------
+        // 🛡️ SECURITY ENGINE: Deal Signature & Margin Check
+        // ---------------------------------------------------------
+        for (const item of items) {
+            const dbItemRes = await pool.query('SELECT * FROM products WHERE id = $1', [item.id]);
+            if (dbItemRes.rows.length === 0) throw new Error(`Product ${item.id} not found`);
+            const dbItem = dbItemRes.rows[0];
+
+            // 1. Calculate Standard Official Price
+            const retailRateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [dbItem.metal_type]);
+            const retailRate = retailRateRes.rows.length > 0 ? parseFloat(retailRateRes.rows[0].rate_per_gram) : 0;
+            const retailMetalValue = parseFloat(dbItem.net_weight) * retailRate;
+            const wastageValue = (retailMetalValue * parseFloat(dbItem.wastage_pct)) / 100;
+            
+            let actualMakingCharge = parseFloat(dbItem.making_charge || 0);
+            if (dbItem.making_charge_type === 'PERCENTAGE') actualMakingCharge = (retailMetalValue * actualMakingCharge) / 100;
+            else if (dbItem.making_charge_type === 'PER_GRAM') actualMakingCharge = parseFloat(dbItem.net_weight) * actualMakingCharge;
+            
+            const subtotal = retailMetalValue + wastageValue + actualMakingCharge;
+            const gst = subtotal * 0.03;
+            const standardListedPrice = Math.round(subtotal + gst);
+
+            // 2. Validate Deal Token
+            let validAuthorizedPrice = standardListedPrice; // Assume full price by default
+            
+            if (item.deal_token) {
+                try {
+                    const decoded = jwt.verify(item.deal_token, process.env.JWT_SECRET || 'aabarnam_secret_fallback');
+                    if (decoded.productId === item.id) {
+                        validAuthorizedPrice = decoded.agreedPrice; // Token is valid, AI authorized this!
+                    }
+                } catch (err) {
+                    console.warn(`[SECURITY] Invalid or expired deal token for Item ${item.id}`);
+                }
+            }
+
+            // 3. Block "Inspect Element" Tampering
+            const attemptedPrice = parseFloat(item.price_breakdown.final_total_price);
+            if (attemptedPrice < validAuthorizedPrice) {
+                console.error(`🚨 HACK ATTEMPT DETECTED: Tried to buy at ₹${attemptedPrice}, but authorized price is ₹${validAuthorizedPrice}`);
+                throw new Error("SECURITY_VIOLATION");
+            }
+
+            // 4. Absolute Safety Net (Ensure AI didn't break)
+            const isGold = dbItem.metal_type.includes('GOLD');
+            const rawMetalToFetch = isGold ? '24K_GOLD' : 'SILVER';
+            const rate24kRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [rawMetalToFetch]);
+            const rate24k = rate24kRes.rows.length > 0 ? parseFloat(rate24kRes.rows[0].rate_per_gram) : 0;
+
+            const pureWeight = parseFloat(dbItem.gross_weight) * (parseFloat(dbItem.purchase_touch_pct || 91.6) / 100);
+            const wholesaleCost = (pureWeight * rate24k) + parseFloat(dbItem.purchase_mc || 0);
+            const secureFloorPrice = Math.round(wholesaleCost * 1.03); 
+
+            if (attemptedPrice < secureFloorPrice) {
+                throw new Error("SECURITY_VIOLATION"); // Double failsafe
+            }
+        }
 
         let generatedOrderId; 
 
-        // SAVES PAYMENT STATUS AS PENDING
         const orderRes = await client.query(
             'INSERT INTO orders (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
             [user_id, customer_name, phone_number, total_amount, 'PENDING', address, city, pincode, payment_method, 'PENDING']
@@ -54,15 +114,33 @@ router.post('/', async (req, res) => {
                 [generatedOrderId, item.id, item.name, item.qty || 1, item.price_breakdown?.final_total_price, origPrice, discount]
             );
 
-            await client.query('UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2', [item.qty || 1, item.id]);
+            // FIX: Prevent negative stock race conditions
+            const stockCheck = await client.query(
+                'UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2 AND stock_quantity >= $1 RETURNING id', 
+                [item.qty || 1, item.id]
+            );
+            
+            if (stockCheck.rowCount === 0) {
+                throw new Error("OUT_OF_STOCK");
+            }
         }
 
         await client.query('COMMIT');
         res.json({ message: "Order placed successfully!", orderId: generatedOrderId });
+
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.message === "SECURITY_VIOLATION") {
+            return res.status(400).json({ error: "Price mismatch detected. Please clear your cart and try again." });
+        }
+        if (err.message === "OUT_OF_STOCK") {
+            return res.status(400).json({ error: "One or more items in your cart just sold out!" });
+        }
+        console.error("Order creation failed:", err.message);
         res.status(500).json({ error: 'Failed to process order. Please try again.' });
-    } finally { client.release(); }
+    } finally {
+        client.release();
+    }
 });
 
 router.put('/:id/payment', async (req, res) => {
