@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const jwt = require('jsonwebtoken'); 
+const jwt = require('jsonwebtoken');
 
 module.exports = (io, pool) => {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -22,7 +22,6 @@ module.exports = (io, pool) => {
     io.on('connection', (socket) => {
         let sessionData = { chatSession: null, productId: null, floorPrice: 0, listedPrice: 0, baseMetalValue: 0, actualMakingCharge: 0, isDealClosed: false };
 
-        // 🛡️ MODIFIED: Now accepts 'history' array from the frontend
         socket.on('start_negotiation', async ({ product_id, history }) => {
             try {
                 const prodRes = await pool.query('SELECT * FROM products WHERE id = $1', [product_id]);
@@ -112,8 +111,23 @@ STRICT RULES:
             }
         });
 
-        socket.on('user_hesitating', async () => { /* ... keeps existing logic ... */ });
-        socket.on('user_leaving', async () => { /* ... keeps existing logic ... */ });
+        socket.on('user_hesitating', async () => {
+            if (!sessionData.chatSession || sessionData.isDealClosed) return; 
+            socket.emit('ai_typing', true);
+            try {
+                const result = await sessionData.chatSession.sendMessage("SYSTEM NOTE: The user is hesitating. Proactively offer a very small discount.");
+                handleAiResponse(result, socket, sessionData);
+            } catch (err) { socket.emit('ai_typing', false); }
+        });
+
+        socket.on('user_leaving', async () => {
+            if (!sessionData.chatSession || sessionData.isDealClosed) return;
+            socket.emit('ai_typing', true);
+            try {
+                const result = await sessionData.chatSession.sendMessage("SYSTEM NOTE: The user is leaving! Make a 'wait, don't go' counter-offer right now.");
+                handleAiResponse(result, socket, sessionData);
+            } catch (err) { socket.emit('ai_typing', false); }
+        });
     });
 
     function handleAiResponse(result, socket, sessionData) {

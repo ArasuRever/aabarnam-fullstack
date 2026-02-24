@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  Package, Truck, CheckCircle, Clock, Search, MapPin, 
-  Phone, Banknote, XCircle, Sparkles, Info 
-} from 'lucide-react';
+import { Package, Truck, CheckCircle, Clock, Search, MapPin, Phone, Banknote, XCircle } from 'lucide-react';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Admin Cancellation Modal States
   const [cancelModalOrder, setCancelModalOrder] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
+  
+  // 🌟 NEW: AI Transcript Modal State
+  const [transcriptModal, setTranscriptModal] = useState(null);
 
   const fetchOrders = async () => {
     try {
@@ -25,11 +24,8 @@ const Orders = () => {
     }
   };
 
-  useEffect(() => { 
-    fetchOrders(); 
-  }, []);
+  useEffect(() => { fetchOrders(); }, []);
 
-  // Intercepts the status change to ask for a reason if cancelling/returning
   const handleStatusChange = (orderId, newStatus) => {
     if (newStatus === 'CANCELLED' || newStatus === 'RETURNED') {
         setCancelModalOrder({ id: orderId, status: newStatus });
@@ -46,20 +42,14 @@ const Orders = () => {
       fetchOrders();
       setCancelModalOrder(null);
       setCancelReason('');
-    } catch (error) { 
-      alert('Failed to update status'); 
-    }
+    } catch (error) { alert('Failed to update status'); }
   };
 
   const updatePaymentStatus = async (id, newStatus) => {
     try {
-      await axios.put(`http://localhost:5000/api/orders/${id}/payment`, { 
-        payment_status: newStatus 
-      });
+      await axios.put(`http://localhost:5000/api/orders/${id}/payment`, { payment_status: newStatus });
       fetchOrders();
-    } catch (error) { 
-      alert('Failed to update payment status'); 
-    }
+    } catch (error) { alert('Failed to update payment status'); }
   };
 
   const filteredOrders = orders.filter(order => 
@@ -73,7 +63,6 @@ const Orders = () => {
   return (
     <div className="p-4 sm:p-8 animate-fade-in relative pb-20">
       
-      {/* CANCELLATION REASON MODAL */}
       {cancelModalOrder && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in-up">
@@ -94,12 +83,33 @@ const Orders = () => {
         </div>
       )}
 
+      {/* 🌟 NEW: AI TRANSCRIPT VIEWER MODAL */}
+      {transcriptModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-fade-in-up max-h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center mb-4 border-b pb-4">
+                   <h3 className="font-bold text-xl text-gray-900 flex items-center gap-2">🤖 AI Negotiation Log</h3>
+                   <button onClick={() => setTranscriptModal(null)} className="text-gray-400 hover:text-black"><XCircle size={24}/></button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto space-y-3 pr-2 bg-gray-50 p-4 rounded-xl">
+                    {transcriptModal.map((msg, i) => (
+                        <div key={i} className={`p-3 rounded-lg text-sm max-w-[85%] ${msg.sender === 'bot' ? 'bg-white border border-gray-200 text-gray-800 self-start' : 'bg-gold/20 border border-gold/30 text-black font-semibold self-end ml-auto'}`}>
+                            <span className="text-[10px] uppercase font-bold text-gray-400 block mb-1">{msg.sender === 'bot' ? 'Master Artisan' : 'Customer'}</span>
+                            {msg.text}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
             <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
                 <Package className="text-gold" /> Order Management
             </h1>
-            <p className="text-gray-500 text-sm mt-1">Track fulfillment, payment verification, and AI deal performance.</p>
+            <p className="text-gray-500 text-sm mt-1">Track fulfillment and payment verification.</p>
         </div>
         <div className="relative w-full md:w-72">
             <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
@@ -115,31 +125,20 @@ const Orders = () => {
         {filteredOrders.map(order => (
           <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
              
-             {/* HEADER */}
              <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex flex-wrap justify-between items-center gap-4">
-                <div className="flex items-center gap-4">
-                    <div>
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Order ID</span>
-                        <p className="text-lg font-black text-gray-900">#{order.id}</p>
-                    </div>
-                    {/* AURA SUCCESS BADGE */}
-                    {order.items?.some(item => item.is_negotiated || item.negotiated_discount > 0) && (
-                        <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-1 border border-purple-200">
-                            <Sparkles size={12}/> Aura Deal
-                        </span>
-                    )}
+                <div>
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Order ID</span>
+                    <p className="text-lg font-black text-gray-900">#{order.id}</p>
+                    <p className="text-xs text-gray-500 mt-1">{new Date(order.created_at).toLocaleString()}</p>
                 </div>
                 <div className="text-right">
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Value</span>
                     <p className="text-xl font-black text-gold-dark">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p>
-                    <p className="text-[10px] text-gray-400 font-mono mt-1">{new Date(order.created_at).toLocaleString()}</p>
                 </div>
              </div>
 
-             {/* BODY */}
              <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
                 
-                {/* 1. Customer Details & AI Insight */}
                 <div className="space-y-3">
                     <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Customer Info</h4>
                     <p className="font-bold text-gray-800 text-sm">{order.customer_name}</p>
@@ -148,59 +147,38 @@ const Orders = () => {
                         <MapPin size={16} className="mt-0.5 text-gray-400 flex-shrink-0" /> 
                         <span>{order.address}<br/>{order.city} - {order.pincode}</span>
                     </p>
+                </div>
 
-                    {/* NEW: AI INSIGHT SECTION FOR TRAINING */}
-                    <div className="mt-6 pt-4 border-t border-gray-50">
-                        <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-2">Aura AI Insights</h4>
-                        {order.items?.some(item => item.negotiated_discount > 0) ? (
-                            <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-                                <p className="text-[11px] text-purple-800 font-bold flex items-center gap-1.5">
-                                    <Sparkles size={12}/> Negotiated Conversion
-                                </p>
-                                <p className="text-[10px] text-purple-600 mt-1">
-                                    Customer utilized Value Addition discounts to lock this purchase.
-                                </p>
-                            </div>
-                        ) : (
-                            <p className="text-[10px] text-gray-400 italic">Direct organic conversion (No negotiation).</p>
-                        )}
+                <div className="space-y-4 md:border-l md:border-r border-gray-100 md:px-6 flex flex-col justify-between">
+                    <div>
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2"><Banknote size={14}/> Payment Details</h4>
+                        <div className="mb-3">
+                            <p className="text-xs text-gray-500 mb-1">Mode of Payment</p>
+                            <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded text-xs font-bold">
+                                {order.payment_method === 'CASH_ON_DELIVERY' ? 'COD (Cash on Delivery)' : 'Digital Payment'}
+                            </span>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500 mb-1">Payment Confirmation</p>
+                            <select 
+                                value={order.payment_status || 'PENDING'} 
+                                onChange={(e) => updatePaymentStatus(order.id, e.target.value)}
+                                className={`text-sm font-bold p-2 border rounded-lg w-full outline-none transition shadow-inner ${
+                                    order.payment_status === 'PAID' ? 'bg-green-50 border-green-300 text-green-800' : 'bg-orange-50 border-orange-300 text-orange-800'
+                                }`}
+                            >
+                                <option value="PENDING">⚠️ Payment Pending</option>
+                                <option value="PAID">✅ Payment Verified & Paid</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
-                {/* 2. Payment Info */}
-                <div className="space-y-4 md:border-l md:border-r border-gray-100 md:px-6">
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2"><Banknote size={14}/> Payment Details</h4>
-                    
-                    <div>
-                        <p className="text-xs text-gray-500 mb-1">Mode of Payment</p>
-                        <span className={`px-3 py-1 rounded text-xs font-bold border ${
-                            order.payment_method === 'COD' ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-blue-50 border-blue-200 text-blue-700'
-                        }`}>
-                            {order.payment_method?.replace('_', ' ')}
-                        </span>
-                    </div>
-
-                    <div>
-                        <p className="text-xs text-gray-500 mb-1">Payment Status</p>
-                        <select 
-                            value={order.payment_status || 'PENDING'} 
-                            onChange={(e) => updatePaymentStatus(order.id, e.target.value)}
-                            className={`text-sm font-bold p-2 border rounded-lg w-full outline-none transition shadow-inner ${
-                                order.payment_status === 'PAID' ? 'bg-green-50 border-green-300 text-green-800' : 'bg-red-50 border-red-300 text-red-800'
-                            }`}
-                        >
-                            <option value="PENDING">⚠️ Payment Pending</option>
-                            <option value="PAID">✅ Payment Verified & Paid</option>
-                        </select>
-                    </div>
-                </div>
-
-                {/* 3. Delivery Status */}
                 <div className="space-y-4">
                     <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2"><Truck size={14}/> Fulfillment Status</h4>
                     
                     <div>
-                        <p className="text-xs text-gray-500 mb-1">Update Order Progress</p>
+                        <p className="text-xs text-gray-500 mb-1">Order Status</p>
                         <select 
                             value={order.status} 
                             onChange={(e) => handleStatusChange(order.id, e.target.value)}
@@ -227,8 +205,31 @@ const Orders = () => {
                         )}
                     </div>
                 </div>
-
              </div>
+
+             {/* 🌟 NEW: ORDER ITEMS & AI LOG BUTTON */}
+             <div className="bg-white px-6 py-4 border-t border-gray-100">
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Order Items</h4>
+                <div className="space-y-2">
+                    {order.items && order.items.map((item, i) => (
+                        <div key={i} className="flex justify-between items-center text-sm bg-gray-50 p-2 rounded-lg border border-gray-100">
+                            <span className="font-medium text-gray-800">{item.quantity}x {item.product_name}</span>
+                            <div className="flex items-center gap-4">
+                                <span className="font-bold text-gray-900">₹{item.price}</span>
+                                {item.discount > 0 && item.transcript && item.transcript.length > 0 && (
+                                    <button 
+                                        onClick={() => setTranscriptModal(item.transcript)}
+                                        className="bg-purple-50 text-purple-700 px-3 py-1 rounded-md text-[10px] font-bold border border-purple-200 hover:bg-purple-100 transition shadow-sm flex items-center gap-1"
+                                    >
+                                        🤖 View AI Log
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+             </div>
+
           </div>
         ))}
 
