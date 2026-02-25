@@ -10,7 +10,6 @@ const pool = new Pool({
 
 router.get('/', async (req, res) => {
     try {
-        // 🌟 UPDATED TO FETCH TRANSCRIPTS FOR ADMIN
         const result = await pool.query(`
             SELECT o.*, 
                    COALESCE(json_agg(json_build_object(
@@ -44,18 +43,22 @@ router.get('/my-orders/:userId', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// POST /api/orders - Create new order (SECURED & TAMPER-PROOF)
 router.post('/', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const { user_id, customer_name, phone_number, total_amount, address, city, pincode, payment_method, items } = req.body;
 
-        // --- SECURITY VALIDATION ENGINE ---
+        // ---------------------------------------------------------
+        // 🛡️ SECURITY ENGINE: Deal Signature & Margin Check
+        // ---------------------------------------------------------
         for (const item of items) {
             const dbItemRes = await pool.query('SELECT * FROM products WHERE id = $1', [item.id]);
             if (dbItemRes.rows.length === 0) throw new Error(`Product ${item.id} not found`);
             const dbItem = dbItemRes.rows[0];
 
+            // 1. Calculate Standard Official Price (Live Market)
             const retailRateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [dbItem.metal_type]);
             const retailRate = retailRateRes.rows.length > 0 ? parseFloat(retailRateRes.rows[0].rate_per_gram) : 0;
             const retailMetalValue = parseFloat(dbItem.net_weight) * retailRate;
@@ -69,14 +72,17 @@ router.post('/', async (req, res) => {
             const gst = subtotal * 0.03;
             const standardListedPrice = Math.round(subtotal + gst);
 
-            let validAuthorizedPrice = standardListedPrice; 
+            // 2. Validate Deal Token
+            let validAuthorizedPrice = standardListedPrice; // Assume full price by default
+            let tokenAccepted = false; // 🌟 NEW FLAG: Tracks if we are honoring a locked deal
             
             if (item.deal_token) {
                 try {
                     const decoded = jwt.verify(item.deal_token, process.env.JWT_SECRET || 'aabarnam_secret_fallback');
-                    // 🛡️ THE FIX: Convert both IDs to Strings so "5" matches 5!
+                    // 🛡️ SECURITY: Convert IDs to strings to prevent Type Mismatch
                     if (String(decoded.productId) === String(item.id)) {
-                        validAuthorizedPrice = decoded.agreedPrice; 
+                        validAuthorizedPrice = decoded.agreedPrice; // Token is valid!
+                        tokenAccepted = true; // Deal is valid, so we trust this price.
                     } else {
                         console.error(`🚨 Token ID Mismatch: Token has ${decoded.productId}, Cart has ${item.id}`);
                     }
@@ -85,44 +91,53 @@ router.post('/', async (req, res) => {
                 }
             }
 
+            // 3. Block "Inspect Element" Tampering
+            // The user cannot pay LESS than what was authorized (either full price or token price)
             const attemptedPrice = parseFloat(item.price_breakdown.final_total_price);
             if (attemptedPrice < validAuthorizedPrice) {
                 console.error(`🚨 HACK ATTEMPT DETECTED: Tried to buy at ₹${attemptedPrice}, but authorized price is ₹${validAuthorizedPrice}`);
                 throw new Error("SECURITY_VIOLATION");
             }
 
-            const isGold = dbItem.metal_type.includes('GOLD');
-            const rawMetalToFetch = isGold ? '24K_GOLD' : 'SILVER';
-            const rate24kRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [rawMetalToFetch]);
-            const rate24k = rate24kRes.rows.length > 0 ? parseFloat(rate24kRes.rows[0].rate_per_gram) : 0;
+            // 4. Absolute Safety Net (The "Live Floor" Check)
+            // 🌟 FIX: If 'tokenAccepted' is true, we SKIP this check. 
+            // Why? Because the token proves the price was safe *at the time of negotiation*.
+            // We shouldn't fail the order just because the market rate shifted 5 minutes later.
+            if (!tokenAccepted) {
+                const isGold = dbItem.metal_type.includes('GOLD');
+                const rawMetalToFetch = isGold ? '24K_GOLD' : 'SILVER';
+                const rate24kRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [rawMetalToFetch]);
+                const rate24k = rate24kRes.rows.length > 0 ? parseFloat(rate24kRes.rows[0].rate_per_gram) : 0;
 
-            const pureWeight = parseFloat(dbItem.gross_weight) * (parseFloat(dbItem.purchase_touch_pct || 91.6) / 100);
-            const wholesaleCost = (pureWeight * rate24k) + parseFloat(dbItem.purchase_mc || 0);
-            const secureFloorPrice = Math.round(wholesaleCost * 1.03); 
+                const pureWeight = parseFloat(dbItem.gross_weight) * (parseFloat(dbItem.purchase_touch_pct || 91.6) / 100);
+                const wholesaleCost = (pureWeight * rate24k) + parseFloat(dbItem.purchase_mc || 0);
+                const secureFloorPrice = Math.round(wholesaleCost * 1.03); 
 
-            if (attemptedPrice < secureFloorPrice) {
-                throw new Error("SECURITY_VIOLATION"); 
+                if (attemptedPrice < secureFloorPrice) {
+                    // Only throw if they DON'T have a valid token AND are trying to go below cost
+                    throw new Error("SECURITY_VIOLATION"); 
+                }
             }
         }
-        // --- END SECURITY ---
 
+        let generatedOrderId; 
         const orderRes = await client.query(
             'INSERT INTO orders (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
             [user_id, customer_name, phone_number, total_amount, 'PENDING', address, city, pincode, payment_method, 'PENDING']
         );
-        let generatedOrderId = orderRes.rows[0].id;
+        generatedOrderId = orderRes.rows[0].id;
 
         for (const item of items) {
             const origPrice = item.price_breakdown?.original_price || item.price_breakdown?.final_total_price;
             const discount = item.price_breakdown?.negotiated_discount || 0;
 
-            // 🌟 WE NOW SAVE THE CHAT TRANSCRIPT TO THE DATABASE ($8)
             await client.query(
                 `INSERT INTO order_items (order_id, product_id, product_name, quantity, price_at_purchase, original_price, negotiated_discount, chat_transcript) 
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
                 [generatedOrderId, item.id, item.name, item.qty || 1, item.price_breakdown?.final_total_price, origPrice, discount, JSON.stringify(item.chat_transcript || [])]
             );
 
+            // FIX: Prevent negative stock race conditions
             const stockCheck = await client.query(
                 'UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2 AND stock_quantity >= $1 RETURNING id', 
                 [item.qty || 1, item.id]
@@ -135,6 +150,7 @@ router.post('/', async (req, res) => {
 
         await client.query('COMMIT');
         res.json({ message: "Order placed successfully!", orderId: generatedOrderId });
+
     } catch (err) {
         await client.query('ROLLBACK');
         if (err.message === "SECURITY_VIOLATION") {
@@ -143,8 +159,11 @@ router.post('/', async (req, res) => {
         if (err.message === "OUT_OF_STOCK") {
             return res.status(400).json({ error: "One or more items in your cart just sold out!" });
         }
+        console.error("Order creation failed:", err.message);
         res.status(500).json({ error: 'Failed to process order. Please try again.' });
-    } finally { client.release(); }
+    } finally {
+        client.release();
+    }
 });
 
 router.put('/:id/payment', async (req, res) => {
@@ -154,6 +173,7 @@ router.put('/:id/payment', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// UPGRADED: Handles Cancellations & Flags Items for Reshelving
 router.put('/:id/status', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -166,6 +186,7 @@ router.put('/:id/status', async (req, res) => {
             [status, cancel_reason || null, cancelled_by || null, orderId]
         );
 
+        // If cancelled or returned, flag items in the Reshelving Queue
         if (status === 'CANCELLED' || status === 'RETURNED') {
             await client.query("UPDATE order_items SET reshelf_status = 'PENDING' WHERE order_id = $1", [orderId]);
         }
@@ -178,6 +199,7 @@ router.put('/:id/status', async (req, res) => {
     } finally { client.release(); }
 });
 
+// NEW: Fetch Pending Reshelf Items for Admin
 router.get('/inventory/reshelf', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -197,11 +219,12 @@ router.get('/inventory/reshelf', async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// NEW: Action a Reshelf Item
 router.put('/inventory/reshelf/:itemId', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { action } = req.body; 
+        const { action } = req.body; // 'RESTOCK' or 'HOLD'
         const itemId = req.params.itemId;
 
         const itemRes = await client.query('SELECT product_id, quantity FROM order_items WHERE id = $1', [itemId]);

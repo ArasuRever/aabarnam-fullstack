@@ -60,8 +60,8 @@ module.exports = (io, pool) => {
 
                 sessionData = { productId: product_id, floorPrice: absoluteMinimum, listedPrice: listedPrice, baseMetalValue: retailMetalValue, actualMakingCharge: actualMakingCharge, isDealClosed: false };
 
-                // 🌟 REBRANDED SYSTEM PROMPT
-                const systemPrompt = `You are the 'Master Artisan' for 'Aabarnam', a premium Indian jewelry store.
+                // 🌟 REBRANDED TO AURA (TOUGHER NEGOTIATOR)
+                const systemPrompt = `You are 'Aura of Aabarnam', the exclusive AI Concierge for a premium Indian jewelry store.
 - Product: ${product.name}
 - Official Retail Price: ₹${listedPrice}
 - Your Absolute Walk-Away Floor Price: ₹${absoluteMinimum}. YOU MUST NEVER SELL BELOW THIS NUMBER.
@@ -69,17 +69,39 @@ module.exports = (io, pool) => {
 STRICT RULES:
 1. Speak warmly, respectfully, and passionately about the craftsmanship. 
 2. Use the term "Value Addition (VA)" instead of "Wastage".
-3. PROTECT THE PROFIT MARGIN. Make VERY SMALL concessions (e.g., drop by just ₹50 to ₹300 at a time).
+3. NEVER AGREE TO LARGE DISCOUNTS. Even if the customer demands a drop of thousands of rupees, politely decline. You must ONLY drop the price by ₹500 to ₹800 per interaction. Defend the price by talking about the purity of the gold and the intense labor of the artisans.
 4. If they bid below ₹${absoluteMinimum}, act politely shocked and state your final rock-bottom price just above the floor.
 5. You MUST use the update_live_price tool for every counter-offer.`;
 
-                // 🔄 REBUILD HISTORY IF USER REFRESHED
+                // 🛠️ THE FIX: THE GEMINI HISTORY SANITIZER
                 let geminiHistory = [];
                 if (history && history.length > 0) {
-                    geminiHistory = history.map(msg => ({
+                    // 1. Map to Gemini format
+                    let rawHistory = history.map(msg => ({
                         role: msg.sender === 'user' ? 'user' : 'model',
                         parts: [{ text: msg.text }]
                     }));
+
+                    // 2. Gemini API Rule #1: First message MUST be from the 'user'
+                    // If Aura spoke first, we insert an invisible dummy user prompt.
+                    if (rawHistory.length > 0 && rawHistory[0].role === 'model') {
+                        rawHistory.unshift({ role: 'user', parts: [{ text: 'Hello, I am interested in this exquisite piece.' }] });
+                    }
+
+                    // 3. Gemini API Rule #2: Roles MUST strictly alternate (user -> model -> user)
+                    // If there are two identical roles in a row, this safely combines them.
+                    for (const msg of rawHistory) {
+                        if (geminiHistory.length === 0) {
+                            geminiHistory.push(msg);
+                        } else {
+                            const lastMsg = geminiHistory[geminiHistory.length - 1];
+                            if (lastMsg.role === msg.role) {
+                                lastMsg.parts[0].text += `\n${msg.parts[0].text}`;
+                            } else {
+                                geminiHistory.push(msg);
+                            }
+                        }
+                    }
                 }
 
                 const sessionModel = genAI.getGenerativeModel({
@@ -91,9 +113,9 @@ STRICT RULES:
 
                 sessionData.chatSession = sessionModel.startChat({ history: geminiHistory });
                 
-                // Only send the greeting if it's a brand new chat
+                // 🌟 UPDATED GREETING
                 if (!history || history.length === 0) {
-                    socket.emit('system_message', { text: `Namaste! I am the Master Artisan. The listed price for this exquisite ${product.name} is ₹${listedPrice}. How can I assist you today?` });
+                    socket.emit('system_message', { text: `Namaste! I am Aura of Aabarnam. The listed price for this exquisite ${product.name} is ₹${listedPrice}. How can I assist you today?` });
                 }
 
             } catch (error) { console.error("Initialization error:", error); }
@@ -107,7 +129,7 @@ STRICT RULES:
                 handleAiResponse(result, socket, sessionData);
             } catch (err) {
                 socket.emit('ai_typing', false);
-                socket.emit('system_message', { text: "Forgive me, my tools are acting up. Could you repeat that?" });
+                socket.emit('system_message', { text: "Forgive me, I need a moment to calculate. Could you repeat that?" });
             }
         });
 

@@ -95,7 +95,10 @@ const Orders = () => {
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 bg-gray-50 p-4 rounded-xl">
                     {transcriptModal.map((msg, i) => (
                         <div key={i} className={`p-3 rounded-lg text-sm max-w-[85%] ${msg.sender === 'bot' ? 'bg-white border border-gray-200 text-gray-800 self-start' : 'bg-gold/20 border border-gold/30 text-black font-semibold self-end ml-auto'}`}>
-                            <span className="text-[10px] uppercase font-bold text-gray-400 block mb-1">{msg.sender === 'bot' ? 'Master Artisan' : 'Customer'}</span>
+                            
+                            {/* 🌟 CHANGED LABEL HERE */}
+                            <span className="text-[10px] uppercase font-bold text-gray-400 block mb-1">{msg.sender === 'bot' ? 'Aura of Aabarnam' : 'Customer'}</span>
+                            
                             {msg.text}
                         </div>
                     ))}
@@ -103,7 +106,6 @@ const Orders = () => {
             </div>
         </div>
       )}
-
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
             <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">

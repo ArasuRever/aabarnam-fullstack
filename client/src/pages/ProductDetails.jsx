@@ -178,13 +178,15 @@ const ProductDetails = () => {
   const resetHesitationTimer = () => {
       if (hesitationTimerRef.current) clearTimeout(hesitationTimerRef.current);
       if (dealStatus === 'accepted') return; 
+      
       hesitationTimerRef.current = setTimeout(() => {
-          if (socketRef.current && dealStatus !== 'accepted' && proactiveOffersCount.current < 2) {
+          // Changed to < 1 so she only panics ONCE per conversation
+          if (socketRef.current && dealStatus !== 'accepted' && proactiveOffersCount.current < 1) {
               socketRef.current.emit('user_hesitating');
               proactiveOffersCount.current += 1; 
-              resetHesitationTimer(); 
+              // Removed the recursive call so she doesn't keep dropping the price endlessly
           }
-      }, 30000); 
+      }, 60000); // Changed to 60 seconds! Give the user time to think.
   };
 
   useEffect(() => {
@@ -575,7 +577,10 @@ const ProductDetails = () => {
         <div className="fixed bottom-6 right-6 min-w-[320px] max-w-[600px] w-80 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-2xl border border-gray-100 overflow-hidden z-[100] animate-fade-in-up flex flex-col resize" style={{ height: '480px', direction: 'rtl' }}>
           <div className="flex flex-col h-full w-full" style={{ direction: 'ltr' }}>
             <div className="bg-gradient-to-r from-gray-900 to-black p-4 text-white flex justify-between items-center border-b border-gray-800">
-              <div className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div><span className="font-bold text-sm tracking-wide">Master Artisan</span></div>
+              
+              {/* 🌟 UPDATED HEADER */}
+              <div className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div><span className="font-bold text-sm tracking-wide">Aura of Aabarnam</span></div>
+              
               <button onClick={() => setShowChat(false)} className="hover:text-gold transition bg-white/10 p-1.5 rounded-lg"><X size={16} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#f8f9fa] flex flex-col">
@@ -602,7 +607,10 @@ const ProductDetails = () => {
                     <div className="flex gap-2 items-center">
                         <div className="relative flex-1">
                             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm z-10 pointer-events-none">₹</span>
-                            <input type="text" value={userBid} onChange={(e) => { setUserBid(e.target.value); resetHesitationTimer(); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} placeholder={dealStatus === 'accepted' ? "Deal Locked!" : (isTyping || onCooldown) ? "Artisan is replying..." : "Your counter-offer..."} disabled={dealStatus === 'accepted' || isTyping || onCooldown} className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" />
+                            
+                            {/* 🌟 UPDATED PLACEHOLDER */}
+                            <input type="text" value={userBid} onChange={(e) => { setUserBid(e.target.value); resetHesitationTimer(); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} placeholder={dealStatus === 'accepted' ? "Deal Locked!" : (isTyping || onCooldown) ? "Aura is replying..." : "Your counter-offer..."} disabled={dealStatus === 'accepted' || isTyping || onCooldown} className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" />
+                            
                         </div>
                         <button onClick={handleSendMessage} disabled={isTyping || onCooldown || !userBid.trim() || dealStatus === 'accepted'} className={`p-3 rounded-xl transition shadow-md flex items-center justify-center ${(!userBid.trim() || dealStatus === 'accepted' || isTyping || onCooldown) ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-black text-gold hover:bg-gray-800 hover:-translate-y-0.5'}`}><Send size={20} /></button>
                     </div>
