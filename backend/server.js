@@ -43,6 +43,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const ordersRoutes = require('./routes/orders');
 const usersRoutes = require('./routes/users');
 const wishlistRoutes = require('./routes/wishlist');
+const otpRoutes = require('./routes/otp');
 
 app.use('/api/rates', ratesRoutes);
 app.use('/api/products', productsRoutes);
@@ -52,6 +53,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/otp', otpRoutes);
 
 // NEW: Initialize the WebSocket Negotiator logic
 const negotiatorSockets = require('./sockets/negotiator');

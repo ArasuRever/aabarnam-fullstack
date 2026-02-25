@@ -8,6 +8,24 @@ const pool = new Pool({
     host: process.env.DB_HOST, port: process.env.DB_PORT, database: process.env.DB_NAME,
 });
 
+// 🌟 NEW: PUBLIC ROUTE FOR QR CODE GIFT REVEAL
+router.get('/gift/:id', async (req, res) => {
+    try {
+        const orderRes = await pool.query(
+            'SELECT customer_name, is_gift, gift_sender, gift_message, created_at FROM orders WHERE id = $1', 
+            [req.params.id]
+        );
+        if (orderRes.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+        
+        const order = orderRes.rows[0];
+        if (!order.is_gift) return res.status(400).json({ error: 'No gift message attached to this order.' });
+
+        res.json(order);
+    } catch (err) { 
+        res.status(500).json({ error: 'Server error' }); 
+    }
+});
+
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -48,8 +66,7 @@ router.post('/', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { user_id, customer_name, phone_number, total_amount, address, city, pincode, payment_method, items } = req.body;
-
+        const { user_id, customer_name, phone_number, total_amount, address, city, pincode, payment_method, items, is_gift, gift_sender, gift_message } = req.body;
         // ---------------------------------------------------------
         // 🛡️ SECURITY ENGINE: Deal Signature & Margin Check
         // ---------------------------------------------------------
@@ -122,8 +139,10 @@ router.post('/', async (req, res) => {
 
         let generatedOrderId; 
         const orderRes = await client.query(
-            'INSERT INTO orders (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
-            [user_id, customer_name, phone_number, total_amount, 'PENDING', address, city, pincode, payment_method, 'PENDING']
+            `INSERT INTO orders 
+            (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status, is_gift, gift_sender, gift_message) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+            [user_id, customer_name, phone_number, total_amount, 'PENDING', address, city, pincode, payment_method, 'PENDING', is_gift || false, gift_sender || null, gift_message || null]
         );
         generatedOrderId = orderRes.rows[0].id;
 

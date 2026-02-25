@@ -1,19 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom'; // NEW: Added useSearchParams
 import axios from 'axios';
 import ProductCard from '../components/ProductCard';
-import { Filter, SlidersHorizontal, Layers, Scale } from 'lucide-react';
+import { Filter, SlidersHorizontal, Layers, Scale, Gift, Sparkles, Users } from 'lucide-react';
 
 const Catalog = () => {
   const { category } = useParams(); 
+  const [searchParams] = useSearchParams(); // NEW: Hook to read URL parameters
+  
+  // NEW: Extract Family Vault Data from URL
+  const forName = searchParams.get('for');
+  const forGender = searchParams.get('gender');
+  const forRing = searchParams.get('ring');
+
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   
   // Advanced Filter States
-  const [priceRange, setPriceRange] = useState(500000); // Default to Max
+  const [priceRange, setPriceRange] = useState(500000); 
   const [selectedMetal, setSelectedMetal] = useState('ALL');
-  const [selectedType, setSelectedType] = useState('ALL'); // NEW: Item Type Filter
-  const [selectedWeight, setSelectedWeight] = useState('ALL'); // NEW: Weight Filter
+  const [selectedType, setSelectedType] = useState('ALL'); 
+  const [selectedWeight, setSelectedWeight] = useState('ALL'); 
+  const [selectedGender, setSelectedGender] = useState(forGender || 'ALL'); // NEW: Auto-set from URL
   const [sortBy, setSortBy] = useState('newest');
 
   // Dynamic Lists for the UI based on inventory
@@ -22,9 +30,13 @@ const Catalog = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        // ONLY FETCH IN-STOCK ITEMS
         const response = await axios.get('http://localhost:5000/api/products?inStock=true');
         setProducts(response.data);
+        
+        // Extract unique item types for the sidebar automatically
+        const types = [...new Set(response.data.map(item => item.item_type))].filter(Boolean);
+        setAvailableTypes(types);
+        
         setLoading(false);
       } catch (error) {
         console.error("Error fetching products", error);
@@ -37,8 +49,8 @@ const Catalog = () => {
   // --- FILTER ENGINE ---
   const filteredProducts = products.filter(product => {
     // 1. URL Category Match
-    if (category === 'gold' && !product.metal_type.includes('GOLD')) return false;
-    if (category === 'silver' && !product.metal_type.includes('SILVER')) return false;
+    if (category === 'gold' && !product.metal_type?.includes('GOLD')) return false;
+    if (category === 'silver' && !product.metal_type?.includes('SILVER')) return false;
 
     // 2. Sidebar Metal Match
     if (selectedMetal !== 'ALL' && product.metal_type !== selectedMetal) return false;
@@ -46,7 +58,13 @@ const Catalog = () => {
     // 3. Sidebar Type Match
     if (selectedType !== 'ALL' && product.item_type !== selectedType) return false;
 
-    // 4. Sidebar Weight Match
+    // 4. Sidebar Gender Match (Smart Filter)
+    if (selectedGender !== 'ALL' && selectedGender !== '') {
+        // Only filter if the product actually has a gender defined, so older products don't vanish
+        if (product.gender && product.gender.toLowerCase() !== selectedGender.toLowerCase()) return false;
+    }
+
+    // 5. Sidebar Weight Match
     if (selectedWeight !== 'ALL') {
         const weight = parseFloat(product.gross_weight);
         if (selectedWeight === 'under5' && weight >= 5) return false;
@@ -54,7 +72,7 @@ const Catalog = () => {
         if (selectedWeight === 'over15' && weight <= 15) return false;
     }
 
-    // 5. Sidebar Price Match
+    // 6. Sidebar Price Match
     const price = parseFloat(product.price_breakdown?.final_total_price || 0);
     if (price > priceRange) return false;
 
@@ -72,11 +90,29 @@ const Catalog = () => {
     <div className="bg-white min-h-screen pt-8 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
+        {/* NEW: THE SMART GIFTING BANNER */}
+        {forName && (
+          <div className="mb-8 bg-gradient-to-r from-gold/20 via-gold/10 to-transparent border border-gold/30 rounded-2xl p-6 md:p-8 flex items-center gap-5 shadow-sm animate-fade-in-up">
+            <div className="w-14 h-14 bg-gold text-black rounded-full flex items-center justify-center shadow-lg transform -rotate-12">
+               <Gift size={28} />
+            </div>
+            <div>
+               <h2 className="text-2xl font-serif font-bold text-gray-900 flex items-center gap-2">
+                 Curated Selection for {forName} <Sparkles size={20} className="text-gold" />
+               </h2>
+               <p className="text-sm text-gray-600 mt-1">
+                 We've automatically applied filters based on {forGender === 'Male' ? 'his' : 'her'} profile. 
+                 {forRing && forRing !== 'null' && <span className="font-bold text-gray-800 ml-1">Ring Size: {forRing}</span>}
+               </p>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-gray-100 pb-6">
           <div>
             <span className="text-gold text-xs font-bold uppercase tracking-widest">Collections</span>
-            <h1 className="text-4xl font-serif text-gray-900 mt-2 capitalize">{category} Jewelry</h1>
+            <h1 className="text-4xl font-serif text-gray-900 mt-2 capitalize">{category === 'all' ? 'All' : category} Jewelry</h1>
           </div>
           <div className="flex items-center gap-4 mt-4 md:mt-0">
              <span className="text-sm text-gray-500">{filteredProducts.length} Results</span>
@@ -94,7 +130,7 @@ const Catalog = () => {
 
         <div className="flex flex-col lg:flex-row gap-10">
           
-          {/* SIDEBAR FILTERS (Now Supercharged) */}
+          {/* SIDEBAR FILTERS */}
           <div className="w-full lg:w-64 flex-shrink-0 space-y-8 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 h-fit sticky top-28">
              
              <div className="flex justify-between items-center mb-2">
@@ -103,11 +139,32 @@ const Catalog = () => {
                     onClick={() => {
                         setPriceRange(500000); setSelectedMetal('ALL'); 
                         setSelectedType('ALL'); setSelectedWeight('ALL');
+                        setSelectedGender('ALL');
                     }} 
                     className="text-[10px] uppercase font-bold text-gray-400 hover:text-red-500 transition"
                  >
                      Reset All
                  </button>
+             </div>
+
+             {/* NEW: Gender Filter (Appears if shopping for someone) */}
+             <div className="border-t border-gray-200 pt-6">
+               <h3 className="font-bold text-xs uppercase tracking-widest text-gray-500 mb-4 flex items-center gap-2">
+                 <Users size={14} /> Made For
+               </h3>
+               <div className="space-y-3">
+                 {['ALL', 'Female', 'Male'].map(gender => (
+                   <label key={gender} className="flex items-center gap-3 cursor-pointer group">
+                     <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedGender === gender ? 'border-gold' : 'border-gray-300'}`}>
+                        {selectedGender === gender && <div className="w-2 h-2 bg-gold rounded-full"></div>}
+                     </div>
+                     <span className={`text-sm ${selectedGender === gender ? 'text-black font-bold' : 'text-gray-600 group-hover:text-black transition'}`}>
+                       {gender === 'ALL' ? 'Everyone' : gender}
+                     </span>
+                     <input type="radio" className="hidden" onClick={() => setSelectedGender(gender)} />
+                   </label>
+                 ))}
+               </div>
              </div>
 
              {/* 1. Metal Filter */}
@@ -190,10 +247,7 @@ const Catalog = () => {
                  <SlidersHorizontal size={14} /> Max Price
                </h3>
                <input 
-                 type="range" 
-                 min="5000" 
-                 max="500000" 
-                 step="5000" 
+                 type="range" min="5000" max="500000" step="5000" 
                  value={priceRange}
                  onChange={(e) => setPriceRange(e.target.value)}
                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black"
@@ -225,8 +279,9 @@ const Catalog = () => {
                      onClick={() => {
                         setPriceRange(500000); setSelectedMetal('ALL'); 
                         setSelectedType('ALL'); setSelectedWeight('ALL');
+                        setSelectedGender('ALL');
                      }} 
-                     className="mt-4 bg-black text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-gold transition shadow-md"
+                     className="mt-4 bg-black text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-gold hover:text-black transition shadow-md"
                   >
                      Clear All Filters
                   </button>

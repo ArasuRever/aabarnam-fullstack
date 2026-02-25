@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ShieldCheck, Lock, MapPin, CheckCircle2, Clock, Landmark, Smartphone, CreditCard, Banknote } from 'lucide-react';
+import { ShieldCheck, Lock, MapPin, CheckCircle2, Clock, Landmark, Smartphone, CreditCard, Banknote, Gift, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext'; 
 
 const Checkout = () => {
@@ -18,6 +18,11 @@ const Checkout = () => {
 
   // Payment State
   const [paymentMethod, setPaymentMethod] = useState('BANK_TRANSFER');
+
+  // 🌟 NEW: Gifting States
+  const [isGift, setIsGift] = useState(false);
+  const [giftMessage, setGiftMessage] = useState('');
+  const [giftSender, setGiftSender] = useState('');
 
   // Expiry Timer State
   const [timeLeft, setTimeLeft] = useState(null);
@@ -81,7 +86,6 @@ const Checkout = () => {
   };
 
   // --- DYNAMIC FEE CALCULATION ---
-  // If they choose Card, we add 2% to cover the gateway fee so you don't lose margin!
   const gatewayFee = paymentMethod === 'CARD' ? cartTotal * 0.02 : 0;
   const finalPayableAmount = cartTotal + gatewayFee;
 
@@ -109,7 +113,11 @@ const Checkout = () => {
         city: rawCity,
         pincode: rawPincode,
         total_amount: finalPayableAmount.toFixed(2),
-        payment_method: paymentMethod, // Selected from UI
+        payment_method: paymentMethod, 
+        // 🌟 NEW: Pass gifting details to backend
+        is_gift: isGift,
+        gift_message: isGift ? giftMessage : null,
+        gift_sender: isGift ? giftSender : null,
         items: cart
       };
 
@@ -117,14 +125,11 @@ const Checkout = () => {
 
       if (res.status === 200 || res.status === 201) {
         clearCart(); 
-        
-        // Custom Success Message based on Payment Type
         if (paymentMethod === 'BANK_TRANSFER') {
             alert(`Order Placed Successfully! 🎉\nYour Order ID is: #${res.data.orderId}\n\nPlease check your email/account for our Bank Account details to transfer the funds.`);
         } else {
             alert(`Order Placed Successfully! 🎉\nYour Order ID is: #${res.data.orderId}`);
         }
-        
         navigate('/account'); 
       }
     } catch (err) {
@@ -206,10 +211,64 @@ const Checkout = () => {
               </form>
             </div>
 
-            {/* 2. HYBRID PAYMENT OPTIONS */}
+            {/* 🌟 2. DIGITAL GIFTING EXPERIENCE */}
+            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+               <div className="flex justify-between items-center mb-6">
+                 <h2 className="text-xl font-bold flex items-center gap-2">
+                    <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                    Gifting Options
+                 </h2>
+                 <label className="flex items-center cursor-pointer">
+                   <div className="relative">
+                     <input type="checkbox" className="sr-only" checked={isGift} onChange={() => setIsGift(!isGift)} />
+                     <div className={`block w-10 h-6 rounded-full transition-colors ${isGift ? 'bg-gold' : 'bg-gray-200'}`}></div>
+                     <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isGift ? 'transform translate-x-4' : ''}`}></div>
+                   </div>
+                 </label>
+               </div>
+
+               {!isGift && (
+                  <div className="flex items-center gap-3 text-gray-500 text-sm">
+                    <Gift size={18} className="text-gray-400" />
+                    <p>Make it special. Add a personalized digital note for the recipient.</p>
+                  </div>
+               )}
+
+               {isGift && (
+                  <div className="space-y-4 animate-fade-in-up">
+                    <div className="bg-gradient-to-r from-gold/20 via-gold/5 to-transparent p-4 rounded-lg border border-gold/30 flex items-start gap-3 mb-4">
+                       <Sparkles className="text-gold flex-shrink-0 mt-0.5" size={18} />
+                       <p className="text-xs text-gray-700 leading-relaxed">
+                         <strong>The Aura Experience:</strong> Your recipient will find a beautiful QR code inside their luxury box. Scanning it will reveal your personalized message and their BIS Authenticity Certificate. Prices will be hidden.
+                       </p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Your Name (Sender)</label>
+                      <input 
+                         type="text" value={giftSender} onChange={(e) => setGiftSender(e.target.value)}
+                         className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm" 
+                         placeholder="e.g. With love, Priya" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Your Message</label>
+                      <textarea 
+                         value={giftMessage} onChange={(e) => setGiftMessage(e.target.value)}
+                         rows="3" maxLength="400"
+                         className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm" 
+                         placeholder="Type your heartfelt message here..."
+                      ></textarea>
+                      <p className="text-right text-[10px] text-gray-400 mt-1">{giftMessage.length} / 400</p>
+                    </div>
+                  </div>
+               )}
+            </div>
+
+            {/* 3. HYBRID PAYMENT OPTIONS */}
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                  <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                  <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
                   Payment Method
                </h2>
                
@@ -273,7 +332,6 @@ const Checkout = () => {
                )}
 
                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                 <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
                  Order Summary
                </h2>
 
@@ -282,9 +340,9 @@ const Checkout = () => {
                     <div key={item.id} className="flex justify-between items-center text-sm">
                        <div className="flex items-center gap-3">
                           <div className="bg-gray-100 w-8 h-8 rounded flex items-center justify-center text-xs font-bold text-gray-600">{item.qty}x</div>
-                          <div><p className="font-bold text-gray-800">{item.name}</p><p className="text-[10px] text-gray-400 font-mono">{item.sku}</p></div>
+                          <div><p className="font-bold text-gray-800 line-clamp-1 pr-2">{item.name}</p><p className="text-[10px] text-gray-400 font-mono">{item.sku}</p></div>
                        </div>
-                       <span className="font-bold text-gray-900">₹{(parseFloat(item.price_breakdown?.final_total_price || 0) * item.qty).toFixed(2)}</span>
+                       <span className="font-bold text-gray-900">₹{(parseFloat(item.price_breakdown?.final_total_price || 0) * item.qty).toLocaleString('en-IN')}</span>
                     </div>
                   ))}
                </div>
@@ -303,7 +361,7 @@ const Checkout = () => {
 
                   <div className="flex justify-between text-xl font-bold text-gray-900 mt-4 pt-4 border-t border-dashed">
                     <span>Total to Pay</span>
-                    <span className="text-gold-dark transition-all duration-300">₹{finalPayableAmount.toFixed(2)}</span>
+                    <span className="text-gold-dark transition-all duration-300">₹{finalPayableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                   </div>
                </div>
 
@@ -311,7 +369,7 @@ const Checkout = () => {
                  type="submit" form="checkout-form" disabled={loading}
                  className="w-full mt-8 bg-black text-gold py-4 rounded-lg font-bold text-lg hover:bg-gray-800 transition shadow-xl flex items-center justify-center gap-2"
                >
-                 {loading ? 'Processing...' : (paymentMethod === 'BANK_TRANSFER' ? `Lock Order — ₹${finalPayableAmount.toFixed(2)}` : `Pay ₹${finalPayableAmount.toFixed(2)}`)}
+                 {loading ? 'Processing...' : (paymentMethod === 'BANK_TRANSFER' ? `Lock Order — ₹${finalPayableAmount.toLocaleString('en-IN')}` : `Pay ₹${finalPayableAmount.toLocaleString('en-IN')}`)}
                  {!loading && <Lock size={18} />}
                </button>
 

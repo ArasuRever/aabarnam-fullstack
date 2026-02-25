@@ -10,6 +10,7 @@ import Checkout from './pages/Checkout';
 import Auth from './pages/Auth';
 import Account from './pages/Account'; // <--- BROUGHT THIS BACK!
 import Wishlist from './pages/Wishlist'; 
+import GiftReveal from './pages/GiftReveal';
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
           <Route path="/auth" element={<Auth />} />
           <Route path="/account" element={<Account />} /> {/* <--- BROUGHT THIS BACK! */}
           <Route path="/wishlist" element={<Wishlist />} /> 
+          <Route path="/gift/:orderId" element={<GiftReveal />} />
         </Routes>
       </div>
     </Router>
