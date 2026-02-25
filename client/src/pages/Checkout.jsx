@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ShieldCheck, Lock, MapPin, CheckCircle2, Clock, Landmark, Smartphone, CreditCard, Banknote, Gift, Sparkles } from 'lucide-react';
+// Added PartyPopper icon for the occasion dropdown
+import { ShieldCheck, Lock, MapPin, CheckCircle2, Clock, Landmark, Smartphone, CreditCard, Banknote, Gift, Sparkles, Eye, PartyPopper } from 'lucide-react';
 import { useAuth } from '../context/AuthContext'; 
 
 const Checkout = () => {
@@ -19,10 +20,12 @@ const Checkout = () => {
   // Payment State
   const [paymentMethod, setPaymentMethod] = useState('BANK_TRANSFER');
 
-  // 🌟 NEW: Gifting States
+  // 🌟 Gifting States (Now with Occasion)
   const [isGift, setIsGift] = useState(false);
   const [giftMessage, setGiftMessage] = useState('');
   const [giftSender, setGiftSender] = useState('');
+  const [occasionCategory, setOccasionCategory] = useState('Birthday');
+  const [customOccasion, setCustomOccasion] = useState('');
 
   // Expiry Timer State
   const [timeLeft, setTimeLeft] = useState(null);
@@ -30,6 +33,9 @@ const Checkout = () => {
   const [formData, setFormData] = useState({
     fullName: '', phone: '', address: '', city: '', pincode: '',
   });
+
+  // Determine the final occasion string based on dropdown
+  const finalOccasion = occasionCategory === 'Custom' ? customOccasion : occasionCategory;
 
   // --- LIVE EXPIRY COUNTDOWN LOGIC ---
   useEffect(() => {
@@ -85,7 +91,29 @@ const Checkout = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // --- DYNAMIC FEE CALCULATION ---
+  // 🌟 Live Preview Handler (Updated to pass Occasion)
+  const handlePreview = () => {
+    // Extract recipient name based on which address form is active
+    let recipientName = 'Recipient Name';
+    if (showNewAddressForm && formData.fullName) {
+        recipientName = formData.fullName;
+    } else if (selectedAddress && selectedAddress.full_name) {
+        recipientName = selectedAddress.full_name;
+    }
+
+    const previewData = {
+        customer_name: recipientName,
+        gift_message: giftMessage || 'Your beautiful message will appear here...',
+        gift_sender: giftSender || 'Your Name',
+        gift_occasion: finalOccasion || 'A Special Gift' // Passed to preview
+    };
+
+    localStorage.setItem('aabarnam_gift_preview', JSON.stringify(previewData));
+    
+    // Open in a new tab so the user doesn't lose their checkout progress
+    window.open('/gift/preview', '_blank');
+  };
+
   const gatewayFee = paymentMethod === 'CARD' ? cartTotal * 0.02 : 0;
   const finalPayableAmount = cartTotal + gatewayFee;
 
@@ -114,10 +142,10 @@ const Checkout = () => {
         pincode: rawPincode,
         total_amount: finalPayableAmount.toFixed(2),
         payment_method: paymentMethod, 
-        // 🌟 NEW: Pass gifting details to backend
         is_gift: isGift,
         gift_message: isGift ? giftMessage : null,
         gift_sender: isGift ? giftSender : null,
+        gift_occasion: isGift ? finalOccasion : null, // Passed to backend
         items: cart
       };
 
@@ -211,7 +239,7 @@ const Checkout = () => {
               </form>
             </div>
 
-            {/* 🌟 2. DIGITAL GIFTING EXPERIENCE */}
+            {/* 🌟 2. DIGITAL GIFTING EXPERIENCE (UPDATED WITH OCCASION) */}
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
                <div className="flex justify-between items-center mb-6">
                  <h2 className="text-xl font-bold flex items-center gap-2">
@@ -242,9 +270,42 @@ const Checkout = () => {
                          <strong>The Aura Experience:</strong> Your recipient will find a beautiful QR code inside their luxury box. Scanning it will reveal your personalized message and their BIS Authenticity Certificate. Prices will be hidden.
                        </p>
                     </div>
+
+                    {/* 🌟 NEW: Occasion Dropdown */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-gray-100 pb-5">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
+                                <PartyPopper size={14}/> Occasion
+                            </label>
+                            <select 
+                                value={occasionCategory} 
+                                onChange={(e) => setOccasionCategory(e.target.value)}
+                                className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm bg-white cursor-pointer"
+                            >
+                                <option value="Birthday">Birthday</option>
+                                <option value="Anniversary">Anniversary</option>
+                                <option value="Wedding">Wedding</option>
+                                <option value="Valentine's Day">Valentine's Day</option>
+                                <option value="Just Because">Just Because</option>
+                                <option value="Custom">Type my own...</option>
+                            </select>
+                        </div>
+
+                        {occasionCategory === 'Custom' && (
+                            <div className="animate-fade-in">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Your Occasion</label>
+                                <input 
+                                    type="text" value={customOccasion} onChange={(e) => setCustomOccasion(e.target.value)}
+                                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm" 
+                                    placeholder="e.g. Graduation, Baby Shower" 
+                                    maxLength={30}
+                                />
+                            </div>
+                        )}
+                    </div>
                     
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Your Name (Sender)</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1 mt-2">Your Name (Sender)</label>
                       <input 
                          type="text" value={giftSender} onChange={(e) => setGiftSender(e.target.value)}
                          className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm" 
@@ -261,11 +322,19 @@ const Checkout = () => {
                       ></textarea>
                       <p className="text-right text-[10px] text-gray-400 mt-1">{giftMessage.length} / 400</p>
                     </div>
+
+                    <button 
+                        type="button"
+                        onClick={handlePreview}
+                        className="w-full mt-2 bg-black text-white py-3 rounded-lg text-sm font-bold hover:bg-gold hover:text-black transition-colors shadow-md flex items-center justify-center gap-2"
+                    >
+                        <Eye size={16} /> Preview Digital Experience
+                    </button>
                   </div>
                )}
             </div>
 
-            {/* 3. HYBRID PAYMENT OPTIONS */}
+            {/* 3. HYBRID PAYMENT OPTIONS (Restored exact user code) */}
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
@@ -315,7 +384,7 @@ const Checkout = () => {
             </div>
           </div>
 
-          {/* RIGHT: ORDER SUMMARY */}
+          {/* RIGHT: ORDER SUMMARY (Restored exact user code) */}
           <div className="space-y-6">
             <div className="bg-white p-8 rounded-xl shadow-lg border border-gold/20 sticky top-24">
                
@@ -351,7 +420,6 @@ const Checkout = () => {
                   <div className="flex justify-between text-gray-500 text-sm"><span>Subtotal</span><span>₹{(cartTotal / 1.03).toFixed(2)}</span></div>
                   <div className="flex justify-between text-gray-500 text-sm"><span>GST (3%)</span><span>₹{(cartTotal - (cartTotal / 1.03)).toFixed(2)}</span></div>
                   
-                  {/* DYNAMIC CARD FEE DISPLAY */}
                   {paymentMethod === 'CARD' && (
                      <div className="flex justify-between text-red-600 text-sm font-bold pt-2 animate-fade-in">
                         <span>Card Gateway Fee (2%)</span>
