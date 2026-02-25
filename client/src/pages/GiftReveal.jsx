@@ -84,29 +84,32 @@ const GiftReveal = () => {
   const occasion = (giftData.gift_occasion || '').toLowerCase();
   
   let ThemeIcon = Gift;
-  let effectType = 'sparkles'; 
   let envelopeLabel = 'A Special Gift';
-  // Default dark luxury background
-  let bgGradient = 'from-gray-900 via-gray-800 to-black';
+  let bgGradient = 'from-gray-900 via-gray-800 to-black'; // Default dark luxury background
+
+  // 🌟 PRIORITY: Check for explicitly saved effect first
+  let effectType = giftData.gift_effect || 'sparkles';
 
   if (occasion.includes('birthday')) {
       ThemeIcon = PartyPopper;
-      effectType = 'balloons';
+      if (!giftData.gift_effect) effectType = 'balloons';
       envelopeLabel = 'Happy Birthday!';
-      bgGradient = 'from-indigo-900 via-purple-900 to-black'; // Festive Purple/Blue
   } else if (occasion.includes('annivers') || occasion.includes('valentin') || occasion.includes('love')) {
       ThemeIcon = Heart;
-      effectType = 'hearts';
+      if (!giftData.gift_effect) effectType = 'hearts';
       envelopeLabel = 'With Love';
-      bgGradient = 'from-rose-900 via-red-950 to-black'; // Romantic Red
   } else if (occasion.includes('wedding') || occasion.includes('marriage')) {
       ThemeIcon = Gem;
-      effectType = 'sparkles'; 
+      if (!giftData.gift_effect) effectType = 'sparkles'; 
       envelopeLabel = 'Happy Wedding!';
-      bgGradient = 'from-amber-900 via-stone-900 to-black'; // Elegant Gold/Stone
   } else if (giftData.gift_occasion) {
       envelopeLabel = giftData.gift_occasion; 
   }
+
+  // Match the background gradient to whatever the final effectType is
+  if (effectType === 'balloons') bgGradient = 'from-indigo-900 via-purple-900 to-black';
+  else if (effectType === 'hearts') bgGradient = 'from-rose-900 via-red-950 to-black';
+  else if (effectType === 'sparkles') bgGradient = 'from-amber-900 via-stone-900 to-black';
 
   return (
     <div className={`min-h-screen bg-gradient-to-br ${bgGradient} flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-1000`}>

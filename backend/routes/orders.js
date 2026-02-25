@@ -11,8 +11,9 @@ const pool = new Pool({
 // 🌟 NEW: PUBLIC ROUTE FOR QR CODE GIFT REVEAL
 router.get('/gift/:id', async (req, res) => {
     try {
+        // 🌟 ADDED gift_occasion and gift_effect to SELECT
         const orderRes = await pool.query(
-            'SELECT customer_name, is_gift, gift_sender, gift_message, created_at FROM orders WHERE id = $1', 
+            'SELECT customer_name, is_gift, gift_sender, gift_message, gift_occasion, gift_effect, created_at FROM orders WHERE id = $1', 
             [req.params.id]
         );
         if (orderRes.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
@@ -66,7 +67,8 @@ router.post('/', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { user_id, customer_name, phone_number, total_amount, address, city, pincode, payment_method, items, is_gift, gift_sender, gift_message } = req.body;
+        // 🌟 ADDED gift_occasion and gift_effect to destructuring
+        const { user_id, customer_name, phone_number, total_amount, address, city, pincode, payment_method, items, is_gift, gift_sender, gift_message, gift_occasion, gift_effect } = req.body;
         // ---------------------------------------------------------
         // 🛡️ SECURITY ENGINE: Deal Signature & Margin Check
         // ---------------------------------------------------------
@@ -138,11 +140,12 @@ router.post('/', async (req, res) => {
         }
 
         let generatedOrderId; 
+        // 🌟 UPDATED INSERT TO INCLUDE gift_occasion and gift_effect
         const orderRes = await client.query(
             `INSERT INTO orders 
-            (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status, is_gift, gift_sender, gift_message) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
-            [user_id, customer_name, phone_number, total_amount, 'PENDING', address, city, pincode, payment_method, 'PENDING', is_gift || false, gift_sender || null, gift_message || null]
+            (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status, is_gift, gift_sender, gift_message, gift_occasion, gift_effect) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+            [user_id, customer_name, phone_number, total_amount, 'PENDING', address, city, pincode, payment_method, 'PENDING', is_gift || false, gift_sender || null, gift_message || null, gift_occasion || null, gift_effect || null]
         );
         generatedOrderId = orderRes.rows[0].id;
 
@@ -262,6 +265,84 @@ router.put('/inventory/reshelf/:itemId', async (req, res) => {
         await client.query('ROLLBACK');
         res.status(500).json({ error: 'Server error' });
     } finally { client.release(); }
+});
+
+// 🌟 UPDATED: USER EDIT ADDRESS (Now triggers Admin Notification)
+router.put('/:id/user-edit-address', async (req, res) => {
+    try {
+        const { address, city, pincode, phone_number } = req.body;
+        const check = await pool.query("SELECT status FROM orders WHERE id = $1", [req.params.id]);
+        if(check.rows[0].status === 'SHIPPED' || check.rows[0].status === 'DELIVERED') return res.status(400).json({ error: 'Cannot edit address after order has shipped.' });
+
+        await pool.query(
+            `UPDATE orders SET address = $1, city = $2, pincode = $3, phone_number = $4, 
+             has_user_updates = true, update_note = 'Customer updated their shipping address.' 
+             WHERE id = $5`, 
+            [address, city, pincode, phone_number, req.params.id]
+        );
+        res.json({ message: 'Address updated successfully' });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// 🌟 UPDATED: USER EDIT GIFT OPTIONS (Now triggers Admin Notification)
+router.put('/:id/user-edit-gift', async (req, res) => {
+    try {
+        const { gift_sender, gift_message, gift_occasion, gift_effect } = req.body;
+        const check = await pool.query("SELECT status FROM orders WHERE id = $1", [req.params.id]);
+        if(check.rows[0].status === 'SHIPPED' || check.rows[0].status === 'DELIVERED') return res.status(400).json({ error: 'Cannot edit gift options after order has shipped.' });
+
+        await pool.query(
+            `UPDATE orders SET gift_sender = $1, gift_message = $2, gift_occasion = $3, gift_effect = $4, 
+             has_user_updates = true, update_note = 'Customer updated their digital gift options.' 
+             WHERE id = $5`, 
+            [gift_sender, gift_message, gift_occasion, gift_effect, req.params.id]
+        );
+        res.json({ message: 'Gift options updated successfully' });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// 🌟 UPDATED: USER CANCEL ORDER (Now triggers Admin Notification)
+router.put('/:id/user-cancel', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const orderId = req.params.id;
+        
+        const check = await client.query("SELECT status FROM orders WHERE id = $1", [orderId]);
+        if(check.rows[0].status === 'SHIPPED' || check.rows[0].status === 'DELIVERED') {
+            throw new Error('TOO_LATE');
+        }
+
+        await client.query(
+            `UPDATE orders SET status = 'CANCELLED', cancel_reason = 'Cancelled by Customer', cancelled_by = 'CUSTOMER', 
+             has_user_updates = true, update_note = 'Customer explicitly cancelled this order.' 
+             WHERE id = $1`, [orderId]
+        );
+        await client.query("UPDATE order_items SET reshelf_status = 'PENDING' WHERE order_id = $1", [orderId]);
+        
+        await client.query('COMMIT');
+        res.json({ message: 'Order Cancelled Successfully' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        if(err.message === 'TOO_LATE') return res.status(400).json({ error: 'Too late to cancel, order is already shipped.' });
+        res.status(500).json({ error: 'Server error' }); 
+    } finally { client.release(); }
+});
+
+// 🌟 NEW: ADMIN ROUTE - Fetch active notifications
+router.get('/admin/notifications', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT id, customer_name, update_note FROM orders WHERE has_user_updates = true ORDER BY created_at DESC");
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// 🌟 NEW: ADMIN ROUTE - Clear notification flag
+router.put('/:id/clear-notification', async (req, res) => {
+    try {
+        await pool.query("UPDATE orders SET has_user_updates = false, update_note = null WHERE id = $1", [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 module.exports = router;

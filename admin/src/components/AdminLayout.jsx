@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Users } from 'lucide-react'; 
+// 🌟 Added Bell icon import
+import { Users, Bell } from 'lucide-react'; 
+import axios from 'axios'; // 🌟 Added axios for fetching notifications
 
 const AdminLayout = ({ children }) => {
   const location = useLocation();
@@ -9,11 +11,27 @@ const AdminLayout = ({ children }) => {
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // UPDATED: Added Reshelving Queue to the sidebar menu
+  // 🌟 NEW: Notification State
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+
+  // 🌟 NEW: Poll for Notifications
+  useEffect(() => {
+    const fetchNotifs = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/orders/admin/notifications');
+            setNotifications(res.data);
+        } catch (e) { console.error("Failed to fetch notifications", e); }
+    };
+    fetchNotifs();
+    const interval = setInterval(fetchNotifs, 10000); // Check every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: '📊' },
     { name: 'Orders', path: '/orders', icon: '📦' },
-    { name: 'Reshelf Queue', path: '/reshelf', icon: '♻️' }, // NEW ITEM
+    { name: 'Reshelf Queue', path: '/reshelf', icon: '♻️' },
     { name: 'Customers', path: '/customers', icon: '👥' }, 
     { name: 'Inventory', path: '/products', icon: '💎' },
     { name: 'Daily Rates', path: '/daily-rates', icon: '📈' },
@@ -84,9 +102,7 @@ const AdminLayout = ({ children }) => {
             >
               <svg 
                 className={`w-6 h-6 transition-transform duration-300 ${isSidebarOpen ? '' : 'rotate-180'}`} 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
@@ -96,7 +112,46 @@ const AdminLayout = ({ children }) => {
             </h2>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4 relative">
+             {/* 🌟 NEW: NOTIFICATION BELL */}
+             <div className="relative">
+                 <button 
+                    onClick={() => setShowNotifs(!showNotifs)}
+                    className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition relative"
+                 >
+                     <Bell size={20} />
+                     {notifications.length > 0 && (
+                         <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border border-white"></span>
+                     )}
+                 </button>
+
+                 {/* Dropdown Menu */}
+                 {showNotifs && (
+                     <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50 animate-fade-in-up">
+                         <div className="p-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                             <span className="text-xs font-bold uppercase tracking-wider text-gray-600">Recent Alerts</span>
+                             <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full">{notifications.length} New</span>
+                         </div>
+                         <div className="max-h-64 overflow-y-auto">
+                             {notifications.length === 0 ? (
+                                 <div className="p-4 text-center text-sm text-gray-500">No new alerts.</div>
+                             ) : (
+                                 notifications.map(n => (
+                                     <button 
+                                        key={n.id}
+                                        onClick={() => { navigate('/orders'); setShowNotifs(false); }}
+                                        className="w-full text-left p-4 border-b border-gray-50 hover:bg-gray-50 transition block"
+                                     >
+                                         <p className="text-xs font-bold text-gray-800">Order #{n.id} • {n.customer_name}</p>
+                                         <p className="text-xs text-red-600 mt-1">{n.update_note}</p>
+                                     </button>
+                                 ))
+                             )}
+                         </div>
+                     </div>
+                 )}
+             </div>
+
              <div className="px-3 py-1 bg-gray-100 rounded-full text-xs font-mono font-bold text-gray-600 border border-gray-200">
                v1.0.5
              </div>

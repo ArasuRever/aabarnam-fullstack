@@ -26,6 +26,7 @@ const Checkout = () => {
   const [giftSender, setGiftSender] = useState('');
   const [occasionCategory, setOccasionCategory] = useState('Birthday');
   const [customOccasion, setCustomOccasion] = useState('');
+  const [customEffect, setCustomEffect] = useState('sparkles'); // 🌟 NEW: Capture Effect
 
   // Expiry Timer State
   const [timeLeft, setTimeLeft] = useState(null);
@@ -36,6 +37,8 @@ const Checkout = () => {
 
   // Determine the final occasion string based on dropdown
   const finalOccasion = occasionCategory === 'Custom' ? customOccasion : occasionCategory;
+  // 🌟 Determine final effect to save
+  const finalEffect = occasionCategory === 'Custom' ? customEffect : null;
 
   // --- LIVE EXPIRY COUNTDOWN LOGIC ---
   useEffect(() => {
@@ -91,7 +94,7 @@ const Checkout = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // 🌟 Live Preview Handler (Updated to pass Occasion)
+  // 🌟 Live Preview Handler (Updated to pass Occasion and Effect)
   const handlePreview = () => {
     // Extract recipient name based on which address form is active
     let recipientName = 'Recipient Name';
@@ -105,7 +108,8 @@ const Checkout = () => {
         customer_name: recipientName,
         gift_message: giftMessage || 'Your beautiful message will appear here...',
         gift_sender: giftSender || 'Your Name',
-        gift_occasion: finalOccasion || 'A Special Gift' // Passed to preview
+        gift_occasion: finalOccasion || 'A Special Gift', // Passed to preview
+        gift_effect: finalEffect // Passed to preview
     };
 
     localStorage.setItem('aabarnam_gift_preview', JSON.stringify(previewData));
@@ -146,6 +150,7 @@ const Checkout = () => {
         gift_message: isGift ? giftMessage : null,
         gift_sender: isGift ? giftSender : null,
         gift_occasion: isGift ? finalOccasion : null, // Passed to backend
+        gift_effect: isGift ? finalEffect : null, // Passed to backend
         items: cart
       };
 
@@ -291,15 +296,29 @@ const Checkout = () => {
                             </select>
                         </div>
 
+                        {/* 🌟 NEW: Reveal Effect Selector when Custom is chosen */}
                         {occasionCategory === 'Custom' && (
-                            <div className="animate-fade-in">
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Your Occasion</label>
-                                <input 
-                                    type="text" value={customOccasion} onChange={(e) => setCustomOccasion(e.target.value)}
-                                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm" 
-                                    placeholder="e.g. Graduation, Baby Shower" 
-                                    maxLength={30}
-                                />
+                            <div className="animate-fade-in space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Your Occasion</label>
+                                    <input 
+                                        type="text" value={customOccasion} onChange={(e) => setCustomOccasion(e.target.value)}
+                                        className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm" 
+                                        placeholder="e.g. Graduation, Baby Shower" 
+                                        maxLength={30}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Reveal Effect</label>
+                                    <select 
+                                        value={customEffect} onChange={(e) => setCustomEffect(e.target.value)}
+                                        className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-gold shadow-sm bg-white cursor-pointer"
+                                    >
+                                        <option value="sparkles">✨ Magical Sparkles</option>
+                                        <option value="balloons">🎈 Celebration Balloons</option>
+                                        <option value="hearts">❤️ Romantic Hearts</option>
+                                    </select>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -334,7 +353,7 @@ const Checkout = () => {
                )}
             </div>
 
-            {/* 3. HYBRID PAYMENT OPTIONS (Restored exact user code) */}
+            {/* 3. HYBRID PAYMENT OPTIONS */}
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <span className="bg-black text-gold w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
@@ -384,7 +403,7 @@ const Checkout = () => {
             </div>
           </div>
 
-          {/* RIGHT: ORDER SUMMARY (Restored exact user code) */}
+          {/* RIGHT: ORDER SUMMARY */}
           <div className="space-y-6">
             <div className="bg-white p-8 rounded-xl shadow-lg border border-gold/20 sticky top-24">
                

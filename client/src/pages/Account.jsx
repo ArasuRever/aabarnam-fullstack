@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+// 🌟 ADDED AlertTriangle for the Cancel Warning
 import { 
   Package, LogOut, MapPin, Plus, Trash2, Heart, Edit2, X, 
-  Ruler, Calendar, ShieldCheck, Save, Users, Gift, Bot, Timer
+  Ruler, Calendar, ShieldCheck, Save, Users, Gift, Bot, Timer, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import OTPModal from '../components/OTPModal';
@@ -35,6 +36,11 @@ const Account = () => {
   const [showRelationForm, setShowRelationForm] = useState(false);
   const [editingRelationId, setEditingRelationId] = useState(null);
   const [relationForm, setRelationForm] = useState({ name: '', relationship: '', gender: '', dob: '', ring_size: '', bangle_size: '' });
+
+  // 🌟 NEW: Modals state for Order Editing
+  const [cancelModal, setCancelModal] = useState({ show: false, order: null });
+  const [editAddressModal, setEditAddressModal] = useState({ show: false, order: null, form: { address: '', city: '', pincode: '', phone_number: '' } });
+  const [editGiftModal, setEditGiftModal] = useState({ show: false, order: null, form: { gift_sender: '', gift_message: '', gift_occasion: '', gift_effect: '' } });
 
   useEffect(() => {
     if (!user) navigate('/auth');
@@ -143,11 +149,93 @@ const Account = () => {
     } catch (err) { toast.error("Invalid Code."); }
   };
 
+  // 🌟 NEW: Order Action Handlers
+  const handleCancelOrder = async () => {
+      try {
+          await axios.put(`http://localhost:5000/api/orders/${cancelModal.order.id}/user-cancel`);
+          toast.success("Order Cancelled Successfully.");
+          setCancelModal({ show: false, order: null }); fetchData();
+      } catch (err) { toast.error(err.response?.data?.error || "Failed to cancel."); }
+  };
+
+  const handleSaveOrderAddress = async (e) => {
+      e.preventDefault();
+      try {
+          await axios.put(`http://localhost:5000/api/orders/${editAddressModal.order.id}/user-edit-address`, editAddressModal.form);
+          toast.success("Shipping details updated!"); setEditAddressModal({ show: false, order: null, form: {} }); fetchData();
+      } catch (err) { toast.error(err.response?.data?.error || "Failed to update address."); }
+  };
+
+  const handleSaveOrderGift = async (e) => {
+      e.preventDefault();
+      try {
+          await axios.put(`http://localhost:5000/api/orders/${editGiftModal.order.id}/user-edit-gift`, editGiftModal.form);
+          toast.success("Gift options updated!"); setEditGiftModal({ show: false, order: null, form: {} }); fetchData();
+      } catch (err) { toast.error(err.response?.data?.error || "Failed to update gift options."); }
+  };
+
   if (!user) return null;
 
   return (
-    <div className="bg-gray-50 min-h-screen py-12 animate-fade-in">
+    <div className="bg-gray-50 min-h-screen py-12 animate-fade-in relative">
       <OTPModal isOpen={showOTP} onClose={() => setShowOTP(false)} targetValue={otpTarget} onVerify={handleVerifyOTP} />
+
+      {/* 🌟 NEW: Cancel Order Modal */}
+      {cancelModal.show && (
+          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl">
+                  <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold font-serif text-red-600">Cancel Order</h3><button onClick={() => setCancelModal({show:false, order:null})}><X size={20}/></button></div>
+                  <div className="bg-red-50 text-red-700 p-4 rounded-lg flex gap-3 text-sm mb-6">
+                      <AlertTriangle size={24} className="flex-shrink-0" />
+                      <p>Are you sure you want to cancel Order <strong>#{cancelModal.order?.id}</strong>? 
+                      {cancelModal.order?.payment_status === 'PAID' && " Because you have already paid, your payment will be reversed and refunded to your original payment method within 5-7 business days."}
+                      </p>
+                  </div>
+                  <div className="flex gap-3"><button onClick={() => setCancelModal({show:false, order:null})} className="flex-1 bg-gray-100 text-gray-800 py-3 rounded-lg font-bold">Keep Order</button><button onClick={handleCancelOrder} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold">Yes, Cancel Order</button></div>
+              </div>
+          </div>
+      )}
+
+      {/* 🌟 NEW: Edit Address Modal */}
+      {editAddressModal.show && (
+          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl">
+                  <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold font-serif">Edit Shipping Address</h3><button onClick={() => setEditAddressModal({show:false, order:null, form:{}})}><X size={20}/></button></div>
+                  <form onSubmit={handleSaveOrderAddress} className="space-y-4">
+                      <div><label className="text-xs font-bold text-gray-500 uppercase">Address</label><textarea required value={editAddressModal.form.address} onChange={(e) => setEditAddressModal({...editAddressModal, form: {...editAddressModal.form, address: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" rows="2"/></div>
+                      <div className="grid grid-cols-2 gap-3">
+                          <div><label className="text-xs font-bold text-gray-500 uppercase">City</label><input required value={editAddressModal.form.city} onChange={(e) => setEditAddressModal({...editAddressModal, form: {...editAddressModal.form, city: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" /></div>
+                          <div><label className="text-xs font-bold text-gray-500 uppercase">Pincode</label><input required value={editAddressModal.form.pincode} onChange={(e) => setEditAddressModal({...editAddressModal, form: {...editAddressModal.form, pincode: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" /></div>
+                      </div>
+                      <div><label className="text-xs font-bold text-gray-500 uppercase">Contact Phone</label><input required value={editAddressModal.form.phone_number} onChange={(e) => setEditAddressModal({...editAddressModal, form: {...editAddressModal.form, phone_number: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" /></div>
+                      <button type="submit" className="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800">Save Changes</button>
+                  </form>
+              </div>
+          </div>
+      )}
+
+      {/* 🌟 NEW: Edit Gift Options Modal */}
+      {editGiftModal.show && (
+          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl">
+                  <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold font-serif">Edit Gift Experience</h3><button onClick={() => setEditGiftModal({show:false, order:null, form:{}})}><X size={20}/></button></div>
+                  <form onSubmit={handleSaveOrderGift} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3">
+                          <div><label className="text-xs font-bold text-gray-500 uppercase">Sender Name</label><input value={editGiftModal.form.gift_sender || ''} onChange={(e) => setEditGiftModal({...editGiftModal, form: {...editGiftModal.form, gift_sender: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" /></div>
+                          <div><label className="text-xs font-bold text-gray-500 uppercase">Occasion</label><input value={editGiftModal.form.gift_occasion || ''} onChange={(e) => setEditGiftModal({...editGiftModal, form: {...editGiftModal.form, gift_occasion: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" placeholder="e.g. Birthday"/></div>
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">Reveal Effect</label>
+                          <select value={editGiftModal.form.gift_effect || 'sparkles'} onChange={(e) => setEditGiftModal({...editGiftModal, form: {...editGiftModal.form, gift_effect: e.target.value}})} className="w-full p-2.5 border rounded bg-white outline-none focus:border-gold">
+                              <option value="sparkles">✨ Magical Sparkles</option><option value="balloons">🎈 Celebration Balloons</option><option value="hearts">❤️ Romantic Hearts</option>
+                          </select>
+                      </div>
+                      <div><label className="text-xs font-bold text-gray-500 uppercase">Gift Message</label><textarea value={editGiftModal.form.gift_message || ''} onChange={(e) => setEditGiftModal({...editGiftModal, form: {...editGiftModal.form, gift_message: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" rows="3" maxLength="400"/></div>
+                      <button type="submit" className="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800">Update Gift Options</button>
+                  </form>
+              </div>
+          </div>
+      )}
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         
@@ -396,6 +484,18 @@ const Account = () => {
                       ))}
                     </div>
                   </div>
+                  
+                  {/* 🌟 NEW: Action buttons for Order Edit / Cancel */}
+                  {(order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED') && (
+                      <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-100">
+                         <button onClick={() => setEditAddressModal({ show: true, order, form: { address: order.address, city: order.city, pincode: order.pincode, phone_number: order.phone_number }})} className="text-xs font-bold text-gray-600 bg-gray-100 px-3 py-2 rounded-md hover:bg-gray-200 transition">Change Address</button>
+                         {order.is_gift && (
+                             <button onClick={() => setEditGiftModal({ show: true, order, form: { gift_sender: order.gift_sender, gift_message: order.gift_message, gift_occasion: order.gift_occasion, gift_effect: order.gift_effect }})} className="text-xs font-bold text-gold-dark bg-gold/10 px-3 py-2 rounded-md hover:bg-gold/20 transition">Edit Gift Options</button>
+                         )}
+                         <button onClick={() => setCancelModal({ show: true, order })} className="text-xs font-bold text-red-600 ml-auto hover:underline">Cancel Order</button>
+                      </div>
+                  )}
+
                 </div>
               ))}
             </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Package, Truck, CheckCircle, Clock, Search, MapPin, Phone, Banknote, XCircle } from 'lucide-react';
+// 🌟 Added AlertTriangle for the Warning Banner
+import { Package, Truck, CheckCircle, Clock, Search, MapPin, Phone, Banknote, XCircle, AlertTriangle } from 'lucide-react';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -10,7 +11,6 @@ const Orders = () => {
   const [cancelModalOrder, setCancelModalOrder] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
   
-  // 🌟 NEW: AI Transcript Modal State
   const [transcriptModal, setTranscriptModal] = useState(null);
 
   const fetchOrders = async () => {
@@ -52,6 +52,14 @@ const Orders = () => {
     } catch (error) { alert('Failed to update payment status'); }
   };
 
+  // 🌟 NEW: Acknowledge Notification
+  const clearNotification = async (id) => {
+    try {
+        await axios.put(`http://localhost:5000/api/orders/${id}/clear-notification`);
+        fetchOrders(); // Refresh the list to remove the banner
+    } catch (e) { alert('Failed to clear notification'); }
+  };
+
   const filteredOrders = orders.filter(order => 
     order.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     order.id.toString().includes(searchTerm) ||
@@ -83,7 +91,6 @@ const Orders = () => {
         </div>
       )}
 
-      {/* 🌟 NEW: AI TRANSCRIPT VIEWER MODAL */}
       {transcriptModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-fade-in-up max-h-[80vh] flex flex-col">
@@ -95,10 +102,7 @@ const Orders = () => {
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 bg-gray-50 p-4 rounded-xl">
                     {transcriptModal.map((msg, i) => (
                         <div key={i} className={`p-3 rounded-lg text-sm max-w-[85%] ${msg.sender === 'bot' ? 'bg-white border border-gray-200 text-gray-800 self-start' : 'bg-gold/20 border border-gold/30 text-black font-semibold self-end ml-auto'}`}>
-                            
-                            {/* 🌟 CHANGED LABEL HERE */}
                             <span className="text-[10px] uppercase font-bold text-gray-400 block mb-1">{msg.sender === 'bot' ? 'Aura of Aabarnam' : 'Customer'}</span>
-                            
                             {msg.text}
                         </div>
                     ))}
@@ -106,6 +110,7 @@ const Orders = () => {
             </div>
         </div>
       )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
             <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
@@ -125,8 +130,24 @@ const Orders = () => {
 
       <div className="space-y-6">
         {filteredOrders.map(order => (
-          <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div key={order.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden transition-all ${order.has_user_updates ? 'border-red-300 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'border-gray-100'}`}>
              
+             {/* 🌟 NEW: NOTIFICATION BANNER */}
+             {order.has_user_updates && (
+                 <div className="bg-red-50 px-6 py-3 flex flex-wrap justify-between items-center gap-4 border-b border-red-200 animate-pulse">
+                     <div className="flex items-center gap-2 text-red-700">
+                         <AlertTriangle size={18} />
+                         <span className="text-sm font-bold">Action Required: {order.update_note}</span>
+                     </div>
+                     <button 
+                        onClick={() => clearNotification(order.id)}
+                        className="bg-white text-red-700 px-4 py-1.5 rounded-lg text-xs font-bold border border-red-200 shadow-sm hover:bg-red-100 transition"
+                     >
+                         Acknowledge & Clear
+                     </button>
+                 </div>
+             )}
+
              <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex flex-wrap justify-between items-center gap-4">
                 <div>
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Order ID</span>
@@ -209,7 +230,6 @@ const Orders = () => {
                 </div>
              </div>
 
-             {/* 🌟 NEW: ORDER ITEMS & AI LOG BUTTON */}
              <div className="bg-white px-6 py-4 border-t border-gray-100">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Order Items</h4>
                 <div className="space-y-2">
