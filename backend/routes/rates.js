@@ -44,8 +44,15 @@ router.post('/', verifyAdmin, async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// 🔥 THE DYNAMIC MARKET SYNC ENGINE (UPDATED API)
+// 🔥 THE DYNAMIC MARKET SYNC ENGINE (YAHOO FINANCE API)
 // ------------------------------------------------------------------
+
+// We use a standard User-Agent so Yahoo Finance doesn't block the request
+const yahooAxiosConfig = {
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+};
 
 const syncMarketRates = async (retailPremiumPct = 3) => {
     try {
@@ -53,16 +60,25 @@ const syncMarketRates = async (retailPremiumPct = 3) => {
         let rawSilverRate = 0;
 
         try {
-            // UPDATED: Using a reliable, open-source currency CDN for precious metals
-            const goldRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xau.json');
-            const silverRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xag.json');
+            // 🌟 NEW: Fetching Live Futures Data from Yahoo Finance
+            const [goldRes, silverRes, inrRes] = await Promise.all([
+                axios.get('https://query1.finance.yahoo.com/v8/finance/chart/GC=F', yahooAxiosConfig), // Gold Futures (USD)
+                axios.get('https://query1.finance.yahoo.com/v8/finance/chart/SI=F', yahooAxiosConfig), // Silver Futures (USD)
+                axios.get('https://query1.finance.yahoo.com/v8/finance/chart/INR=X', yahooAxiosConfig) // USD to INR exchange rate
+            ]);
             
-            // The API returns the price of 1 Troy Ounce (XAU/XAG) in INR.
+            // Extract the current market price from the JSON payload
+            const goldUsd = goldRes.data.chart.result[0].meta.regularMarketPrice;
+            const silverUsd = silverRes.data.chart.result[0].meta.regularMarketPrice;
+            const usdToInr = inrRes.data.chart.result[0].meta.regularMarketPrice;
+
             // 1 Troy Ounce = 31.1034768 grams.
-            raw24kRate = goldRes.data.xau.inr / 31.1034768;
-            rawSilverRate = silverRes.data.xag.inr / 31.1034768;
+            // Math: (Price in USD * Exchange Rate) / Troy Ounce Weight = Price per gram in INR
+            raw24kRate = (goldUsd * usdToInr) / 31.1034768;
+            rawSilverRate = (silverUsd * usdToInr) / 31.1034768;
+
         } catch (apiError) {
-            console.warn("Live API failed, using fallback modern baseline...");
+            console.error("Live API failed, using fallback modern baseline...", apiError.message);
             raw24kRate = 7400; // Modern Failsafe 24K Rate
             rawSilverRate = 90; // Modern Failsafe Silver Rate
         }
@@ -156,19 +172,28 @@ router.post('/sync', verifyAdmin, async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// 🔥 REGIONAL BULLION ENGINE (UPDATED API)
+// 🔥 REGIONAL BULLION ENGINE (YAHOO FINANCE API)
 // ------------------------------------------------------------------
 router.get('/regional-bullion', verifyAdmin, async (req, res) => {
     try {
         let raw24kRate = 0;
         let rawSilverRate = 0;
         try {
-            // UPDATED API
-            const goldRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xau.json');
-            const silverRes = await axios.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xag.json');
-            raw24kRate = goldRes.data.xau.inr / 31.1034768; 
-            rawSilverRate = silverRes.data.xag.inr / 31.1034768;
+            // 🌟 NEW: Fetching Live Futures Data from Yahoo Finance
+            const [goldRes, silverRes, inrRes] = await Promise.all([
+                axios.get('https://query1.finance.yahoo.com/v8/finance/chart/GC=F', yahooAxiosConfig),
+                axios.get('https://query1.finance.yahoo.com/v8/finance/chart/SI=F', yahooAxiosConfig),
+                axios.get('https://query1.finance.yahoo.com/v8/finance/chart/INR=X', yahooAxiosConfig)
+            ]);
+            
+            const goldUsd = goldRes.data.chart.result[0].meta.regularMarketPrice;
+            const silverUsd = silverRes.data.chart.result[0].meta.regularMarketPrice;
+            const usdToInr = inrRes.data.chart.result[0].meta.regularMarketPrice;
+
+            raw24kRate = (goldUsd * usdToInr) / 31.1034768;
+            rawSilverRate = (silverUsd * usdToInr) / 31.1034768;
         } catch (apiError) {
+            console.error("Regional Bullion API failed, using fallback...", apiError.message);
             raw24kRate = 7400; // Modern baseline
             rawSilverRate = 90; 
         }

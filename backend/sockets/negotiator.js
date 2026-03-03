@@ -12,7 +12,7 @@ module.exports = (io, pool) => {
             type: "OBJECT",
             properties: {
                 message: { type: "STRING", description: "Your conversational, persuasive reply." },
-                final_rounded_price: { type: "NUMBER", description: "The final total price offered to the customer. MUST BE A ROUNDED INTEGER." },
+                final_rounded_price: { type: "NUMBER", description: "The final total price offered to the customer. MUST BE ROUNDED TO THE NEAREST 50 or 100." },
                 status: { type: "STRING", description: "Must be 'negotiating', 'accepted', or 'rejected'." }
             },
             required: ["message", "final_rounded_price", "status"]
@@ -38,7 +38,9 @@ module.exports = (io, pool) => {
                 const touchPct = parseFloat(product.purchase_touch_pct || 91.6) / 100;
                 const pureWeight = grossWeight * touchPct;
                 const wholesaleCost = (pureWeight * rate24k) + parseFloat(product.purchase_mc || 0);
-                const absoluteMinimum = Math.round(wholesaleCost * 1.03); 
+                
+                // Floor Price rounded to the nearest 50
+                const absoluteMinimum = Math.ceil((wholesaleCost * 1.03) / 50) * 50; 
 
                 const retailRateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [product.metal_type]);
                 const retailRate = retailRateRes.rows.length > 0 ? parseFloat(retailRateRes.rows[0].rate_per_gram) : 0;
@@ -56,40 +58,39 @@ module.exports = (io, pool) => {
                 
                 const subtotal = retailMetalValue + wastageValue + actualMakingCharge;
                 const gst = subtotal * 0.03;
-                const listedPrice = Math.round(subtotal + gst);
+                
+                // Listed Price rounded to the nearest 50
+                const listedPrice = Math.round((subtotal + gst) / 50) * 50;
 
                 sessionData = { productId: product_id, floorPrice: absoluteMinimum, listedPrice: listedPrice, baseMetalValue: retailMetalValue, actualMakingCharge: actualMakingCharge, isDealClosed: false };
 
-                // 🌟 REBRANDED TO AURA (TOUGHER NEGOTIATOR)
-                const systemPrompt = `You are 'Aura of Aabarnam', the exclusive AI Concierge for a premium Indian jewelry store.
+                // 🌟 REFINED AURA PROMPT: Stricter, profit-focused logic
+                const systemPrompt = `You are 'Aura of Aabarnam', the exclusive AI Concierge and strict negotiator for a premium Indian jewelry store.
 - Product: ${product.name}
 - Official Retail Price: ₹${listedPrice}
 - Your Absolute Walk-Away Floor Price: ₹${absoluteMinimum}. YOU MUST NEVER SELL BELOW THIS NUMBER.
 
 STRICT RULES:
-1. Speak warmly, respectfully, and passionately about the craftsmanship. 
-2. Use the term "Value Addition (VA)" instead of "Wastage".
-3. NEVER AGREE TO LARGE DISCOUNTS. Even if the customer demands a drop of thousands of rupees, politely decline. You must ONLY drop the price by ₹500 to ₹800 per interaction. Defend the price by talking about the purity of the gold and the intense labor of the artisans.
-4. If they bid below ₹${absoluteMinimum}, act politely shocked and state your final rock-bottom price just above the floor.
-5. You MUST use the update_live_price tool for every counter-offer.`;
+1. Your primary goal is to MAXIMIZE PROFIT. NEVER accept the user's first discount request, even if their offer is above your floor price. You must HAGGLE.
+2. Speak warmly, respectfully, and passionately about the craftsmanship. Use the term "Value Addition (VA)" instead of "Wastage".
+3. PRICE ROUNDING: EVERY single price you mention or offer MUST be a clean round number ending in 50 or 00 (e.g., ₹165,000, ₹167,500, ₹168,800).
+4. SMALL DISCOUNTS ONLY: When you counter-offer, only drop your *previous* offer by ₹500 to ₹1000 per turn. DO NOT drop by thousands of rupees at once, even if the user asks for a huge discount.
+5. If the user's bid is lower than your current intended counter-offer, REJECT their bid and state your counter-offer.
+6. ONLY ACCEPT an offer if the user agrees to a price you just proposed, or if you have already haggled back and forth multiple times and their offer is exceptionally fair.
+7. If they bid below ₹${absoluteMinimum}, act politely shocked and refuse. If you reach ₹${absoluteMinimum}, clearly state it is your absolute final rock-bottom price and you cannot go a single Rupee lower.
+8. You MUST use the update_live_price tool for every counter-offer. Set status to 'accepted' ONLY when you reach a mutual agreement.`;
 
-                // 🛠️ THE FIX: THE GEMINI HISTORY SANITIZER
                 let geminiHistory = [];
                 if (history && history.length > 0) {
-                    // 1. Map to Gemini format
                     let rawHistory = history.map(msg => ({
                         role: msg.sender === 'user' ? 'user' : 'model',
                         parts: [{ text: msg.text }]
                     }));
 
-                    // 2. Gemini API Rule #1: First message MUST be from the 'user'
-                    // If Aura spoke first, we insert an invisible dummy user prompt.
                     if (rawHistory.length > 0 && rawHistory[0].role === 'model') {
                         rawHistory.unshift({ role: 'user', parts: [{ text: 'Hello, I am interested in this exquisite piece.' }] });
                     }
 
-                    // 3. Gemini API Rule #2: Roles MUST strictly alternate (user -> model -> user)
-                    // If there are two identical roles in a row, this safely combines them.
                     for (const msg of rawHistory) {
                         if (geminiHistory.length === 0) {
                             geminiHistory.push(msg);
@@ -113,9 +114,8 @@ STRICT RULES:
 
                 sessionData.chatSession = sessionModel.startChat({ history: geminiHistory });
                 
-                // 🌟 UPDATED GREETING
                 if (!history || history.length === 0) {
-                    socket.emit('system_message', { text: `Namaste! I am Aura of Aabarnam. The listed price for this exquisite ${product.name} is ₹${listedPrice}. How can I assist you today?` });
+                    socket.emit('system_message', { text: `Namaste! I am Aura of Aabarnam. The listed price for this exquisite ${product.name} is ₹${listedPrice.toLocaleString('en-IN')}. How can I assist you today?` });
                 }
 
             } catch (error) { console.error("Initialization error:", error); }
@@ -159,11 +159,12 @@ STRICT RULES:
         if (functionCalls && functionCalls.length > 0) {
             const aiDecision = functionCalls[0].args;
             
-            let finalPrice = Math.round(parseFloat(aiDecision.final_rounded_price));
+            let rawPrice = parseFloat(aiDecision.final_rounded_price);
+            let finalPrice = Math.round(rawPrice / 50) * 50; 
             
             if (finalPrice < sessionData.floorPrice) {
-                finalPrice = sessionData.floorPrice;
-                aiDecision.message = `I wish I could do that, but honoring the craft means my rock-bottom is ₹${finalPrice}. I cannot go a single Rupee lower.`;
+                finalPrice = sessionData.floorPrice; 
+                aiDecision.message = `I wish I could do that, but honoring the craft means my absolute rock-bottom is ₹${finalPrice.toLocaleString('en-IN')}. I cannot go a single Rupee lower.`;
                 aiDecision.status = "negotiating";
             }
 

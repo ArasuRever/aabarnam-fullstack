@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-// 🌟 ADDED AlertTriangle for the Cancel Warning
 import { 
   Package, LogOut, MapPin, Plus, Trash2, Heart, Edit2, X, 
-  Ruler, Calendar, ShieldCheck, Save, Users, Gift, Bot, Timer, AlertTriangle
+  Ruler, Calendar, ShieldCheck, Save, Users, Gift, Bot, Timer, AlertTriangle, 
+  CreditCard as CreditCardIcon, Scan, CircleDashed, Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import OTPModal from '../components/OTPModal';
@@ -16,7 +16,7 @@ const Account = () => {
   const [orders, setOrders] = useState([]);
   const [addresses, setAddresses] = useState([]);
   const [relations, setRelations] = useState([]);
-  const [activeDeals, setActiveDeals] = useState([]); // 🌟 NEW: Deal Locker State
+  const [activeDeals, setActiveDeals] = useState([]); 
   const [loading, setLoading] = useState(true);
   
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -37,10 +37,21 @@ const Account = () => {
   const [editingRelationId, setEditingRelationId] = useState(null);
   const [relationForm, setRelationForm] = useState({ name: '', relationship: '', gender: '', dob: '', ring_size: '', bangle_size: '' });
 
-  // 🌟 NEW: Modals state for Order Editing
   const [cancelModal, setCancelModal] = useState({ show: false, order: null });
   const [editAddressModal, setEditAddressModal] = useState({ show: false, order: null, form: { address: '', city: '', pincode: '', phone_number: '' } });
   const [editGiftModal, setEditGiftModal] = useState({ show: false, order: null, form: { gift_sender: '', gift_message: '', gift_occasion: '', gift_effect: '' } });
+
+  const [sizer, setSizer] = useState({ show: false, step: 1, type: 'ring', cardPx: 280, circlePx: 120 });
+
+  // 🌟 NEW: Lock background scrolling when ANY modal is open
+  useEffect(() => {
+    if (sizer.show || cancelModal.show || editAddressModal.show || editGiftModal.show || showOTP) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = 'unset';
+    }
+    return () => { document.body.style.overflow = 'unset'; }
+  }, [sizer.show, cancelModal.show, editAddressModal.show, editGiftModal.show, showOTP]);
 
   useEffect(() => {
     if (!user) navigate('/auth');
@@ -58,23 +69,12 @@ const Account = () => {
         setAddresses(addrRes.data || []);
         setRelations(relRes.data || []);
 
-        // 🌟 Fetch Active Deals (Graceful fallback if endpoint doesn't exist yet)
         try {
            const dealsRes = await axios.get(`http://localhost:5000/api/bargain/user/${user.id}`);
            setActiveDeals(dealsRes.data || []);
-        } catch (e) {
-           console.log("Deal locker endpoint not ready, skipping...");
-           setActiveDeals([]);
-        }
-
-      } catch (err) {
-        console.error("Failed to load account data");
-      } finally {
-        setLoading(false);
-      }
-    } else {
-        setLoading(false);
-    }
+        } catch (e) { setActiveDeals([]); }
+      } catch (err) { console.error("Failed to load account data"); } finally { setLoading(false); }
+    } else { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, [user]);
@@ -90,7 +90,6 @@ const Account = () => {
     } catch (err) { toast.error("Failed to update vault details"); }
   };
 
-  // Address Handlers
   const openAddForm = () => { setEditingId(null); setAddressForm({ full_name: '', phone: '', address: '', city: '', pincode: '' }); setShowAddForm(true); };
   const openEditForm = (addr) => { setShowAddForm(false); setEditingId(addr.id); setAddressForm({ full_name: addr.full_name, phone: addr.phone, address: addr.address, city: addr.city, pincode: addr.pincode }); };
   const handleSaveAddress = async (e) => {
@@ -113,28 +112,18 @@ const Account = () => {
     }
   };
 
-  // Relation Handlers
   const openAddRelationForm = () => { setEditingRelationId(null); setRelationForm({ name: '', relationship: '', gender: '', dob: '', ring_size: '', bangle_size: '' }); setShowRelationForm(true); };
   const openEditRelationForm = (rel) => { setShowRelationForm(false); setEditingRelationId(rel.id); setRelationForm({ name: rel.name, relationship: rel.relationship, gender: rel.gender, dob: rel.dob ? new Date(rel.dob).toISOString().split('T')[0] : '', ring_size: rel.ring_size || '', bangle_size: rel.bangle_size || '' }); };
-  
   const handleSaveRelation = async (e) => {
     e.preventDefault();
     try {
-      if (editingRelationId) {
-        await axios.put(`http://localhost:5000/api/users/relations/${editingRelationId}`, relationForm);
-      } else {
-        await axios.post(`http://localhost:5000/api/users/${user.id}/relations`, relationForm);
-      }
+      if (editingRelationId) await axios.put(`http://localhost:5000/api/users/relations/${editingRelationId}`, relationForm);
+      else await axios.post(`http://localhost:5000/api/users/${user.id}/relations`, relationForm);
       setShowRelationForm(false); setEditingRelationId(null); fetchData(); toast.success("Family Vault Updated!");
     } catch (err) { toast.error("Failed to save"); }
   };
-  const handleDeleteRelation = async (id) => {
-    if(window.confirm("Remove this person?")) {
-        try { await axios.delete(`http://localhost:5000/api/users/relations/${id}`); fetchData(); } catch (err) {}
-    }
-  };
+  const handleDeleteRelation = async (id) => { if(window.confirm("Remove this person?")) { try { await axios.delete(`http://localhost:5000/api/users/relations/${id}`); fetchData(); } catch (err) {} } };
 
-  // OTP Handlers
   const triggerOTP = async (target) => {
     setOtpTarget(target);
     try {
@@ -149,7 +138,6 @@ const Account = () => {
     } catch (err) { toast.error("Invalid Code."); }
   };
 
-  // 🌟 NEW: Order Action Handlers
   const handleCancelOrder = async () => {
       try {
           await axios.put(`http://localhost:5000/api/orders/${cancelModal.order.id}/user-cancel`);
@@ -174,16 +162,115 @@ const Account = () => {
       } catch (err) { toast.error(err.response?.data?.error || "Failed to update gift options."); }
   };
 
+  // 🌟 REFINED MATH: Indian Standard Size = Circumference - 40
+  const pxPerMm = sizer.cardPx / 85.6; 
+  const currentMm = sizer.circlePx / pxPerMm;
+  const currentCircumference = currentMm * Math.PI;
+  const calculatedRingSize = Math.max(1, Math.min(35, Math.round(currentCircumference - 40))); 
+  
+  const calculatedBangleSize = currentMm < 55.5 ? '2.2' : currentMm < 58.7 ? '2.4' : currentMm < 61.9 ? '2.6' : currentMm < 65.1 ? '2.8' : '2.10';
+
+  const saveMeasuredSize = () => {
+      if (sizer.type === 'ring') setVaultForm({...vaultForm, ring_size: calculatedRingSize});
+      else setVaultForm({...vaultForm, bangle_size: calculatedBangleSize});
+      setIsEditingProfile(true); 
+      setSizer({...sizer, show: false});
+      toast.success(`${sizer.type === 'ring' ? 'Ring' : 'Bangle'} size set to vault!`);
+  };
+
   if (!user) return null;
 
   return (
     <div className="bg-gray-50 min-h-screen py-12 animate-fade-in relative">
       <OTPModal isOpen={showOTP} onClose={() => setShowOTP(false)} targetValue={otpTarget} onVerify={handleVerifyOTP} />
 
-      {/* 🌟 NEW: Cancel Order Modal */}
+      {/* 🌟 ENHANCED SIZER MODAL (Scrollable & Larger) */}
+      {sizer.show && (
+          <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl animate-fade-in-up flex flex-col max-h-[90vh] overflow-hidden">
+                  
+                  {/* Fixed Header */}
+                  <div className="bg-gradient-to-r from-gray-900 to-black p-4 flex justify-between items-center text-white border-b border-gold/30 shrink-0">
+                      <h3 className="font-serif font-bold text-lg text-gold flex items-center gap-2">
+                          <Scan size={20} /> Aabarnam Digital Sizer
+                      </h3>
+                      <button onClick={() => setSizer({...sizer, show: false})} className="text-gray-400 hover:text-white transition"><X size={20}/></button>
+                  </div>
+
+                  {/* Scrollable Body */}
+                  <div className="overflow-y-auto p-6 md:p-8 flex flex-col items-center text-center custom-scrollbar">
+                      {sizer.step === 1 && (
+                          <div className="w-full max-w-lg mx-auto">
+                              <h4 className="font-bold text-gray-900 mb-2 text-xl">Step 1: Calibrate Screen</h4>
+                              <p className="text-sm text-gray-500 mb-8">Place a standard Debit/Credit Card flat against your screen. Adjust the slider until the blue box exactly matches your physical card.</p>
+                              
+                              <div className="w-full h-[350px] bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center mb-8 shadow-inner overflow-hidden relative">
+                                  <div 
+                                    style={{ width: `${sizer.cardPx}px`, height: `${sizer.cardPx * (53.98 / 85.6)}px` }} 
+                                    className="bg-blue-600 rounded-xl shadow-lg border-2 border-white/50 flex flex-col justify-between p-4 transition-all duration-75"
+                                  >
+                                      <div className="flex justify-between items-center opacity-30">
+                                          <div className="w-12 h-8 bg-yellow-400 rounded-md"></div>
+                                          <CreditCardIcon className="text-white" size={32} />
+                                      </div>
+                                      <div className="w-3/4 h-3 bg-white/30 rounded mt-auto"></div>
+                                  </div>
+                              </div>
+
+                              <input type="range" min="150" max="600" value={sizer.cardPx} onChange={(e) => setSizer({...sizer, cardPx: Number(e.target.value)})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black mb-6" />
+                              <button onClick={() => setSizer({...sizer, step: 2})} className="w-full bg-black text-gold py-4 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg">Confirm Calibration</button>
+                          </div>
+                      )}
+
+                      {sizer.step === 2 && (
+                          <div className="w-full max-w-lg mx-auto">
+                              <h4 className="font-bold text-gray-900 mb-2 text-xl">Step 2: Find Your Size</h4>
+                              
+                              {/* 🌟 Warning Notice about Inside Edge */}
+                              <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded-lg mb-6 text-sm flex items-start gap-2 text-left shadow-sm">
+                                 <Info className="flex-shrink-0 mt-0.5 text-orange-600" size={18} />
+                                 <p><strong>Crucial:</strong> Place your existing jewelry on the screen. The dotted circle must touch the <b>INSIDE EDGE</b> of your ring/bangle. Do not measure the outside thickness!</p>
+                              </div>
+                              
+                              <div className="flex gap-2 bg-gray-100 p-1 rounded-lg mb-6 justify-center w-fit mx-auto">
+                                  <button onClick={() => setSizer({...sizer, type: 'ring', circlePx: 120})} className={`px-6 py-2 rounded-md text-sm font-bold transition ${sizer.type === 'ring' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-black'}`}>💍 Ring</button>
+                                  <button onClick={() => setSizer({...sizer, type: 'bangle', circlePx: 250})} className={`px-6 py-2 rounded-md text-sm font-bold transition ${sizer.type === 'bangle' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-black'}`}>⭕ Bangle</button>
+                              </div>
+
+                              <div className="w-full h-[350px] bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center mb-6 shadow-inner relative overflow-hidden">
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
+                                      <div className="w-px h-full bg-black"></div><div className="w-full h-px bg-black absolute"></div>
+                                  </div>
+                                  <div 
+                                    style={{ width: `${sizer.circlePx}px`, height: `${sizer.circlePx}px` }} 
+                                    className="rounded-full border-[3px] border-dashed border-gold flex items-center justify-center bg-gold/10 transition-all duration-75 relative"
+                                  >
+                                      <span className="text-[10px] text-gold-dark font-bold font-mono bg-white/90 px-2 py-0.5 rounded shadow-sm border border-gold/20">{currentMm.toFixed(1)} mm</span>
+                                  </div>
+                              </div>
+
+                              <input type="range" min="30" max="400" value={sizer.circlePx} onChange={(e) => setSizer({...sizer, circlePx: Number(e.target.value)})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black mb-6" />
+                              
+                              <div className="bg-green-50 w-full p-4 rounded-xl border border-green-200 mb-6 shadow-inner">
+                                  <p className="text-xs text-green-800 uppercase tracking-widest font-bold">Estimated Standard Size</p>
+                                  <p className="text-3xl font-serif text-green-900 mt-1">{sizer.type === 'ring' ? `Size ${calculatedRingSize}` : `Size ${calculatedBangleSize}`}</p>
+                              </div>
+
+                              <div className="flex gap-3 w-full pb-4">
+                                  <button onClick={() => setSizer({...sizer, step: 1})} className="flex-1 bg-gray-100 text-gray-800 py-3 rounded-xl font-bold hover:bg-gray-200 transition">Back</button>
+                                  <button onClick={saveMeasuredSize} className="flex-[2] bg-black text-gold py-3 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg">Save to Vault</button>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Cancel Order Modal (Scroll-safe) */}
       {cancelModal.show && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl">
+              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold font-serif text-red-600">Cancel Order</h3><button onClick={() => setCancelModal({show:false, order:null})}><X size={20}/></button></div>
                   <div className="bg-red-50 text-red-700 p-4 rounded-lg flex gap-3 text-sm mb-6">
                       <AlertTriangle size={24} className="flex-shrink-0" />
@@ -196,10 +283,10 @@ const Account = () => {
           </div>
       )}
 
-      {/* 🌟 NEW: Edit Address Modal */}
+      {/* Edit Address Modal (Scroll-safe) */}
       {editAddressModal.show && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl">
+              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold font-serif">Edit Shipping Address</h3><button onClick={() => setEditAddressModal({show:false, order:null, form:{}})}><X size={20}/></button></div>
                   <form onSubmit={handleSaveOrderAddress} className="space-y-4">
                       <div><label className="text-xs font-bold text-gray-500 uppercase">Address</label><textarea required value={editAddressModal.form.address} onChange={(e) => setEditAddressModal({...editAddressModal, form: {...editAddressModal.form, address: e.target.value}})} className="w-full p-2.5 border rounded outline-none focus:border-gold" rows="2"/></div>
@@ -214,10 +301,10 @@ const Account = () => {
           </div>
       )}
 
-      {/* 🌟 NEW: Edit Gift Options Modal */}
+      {/* Edit Gift Modal (Scroll-safe) */}
       {editGiftModal.show && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl">
+              <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold font-serif">Edit Gift Experience</h3><button onClick={() => setEditGiftModal({show:false, order:null, form:{}})}><X size={20}/></button></div>
                   <form onSubmit={handleSaveOrderGift} className="space-y-4">
                       <div className="grid grid-cols-2 gap-3">
@@ -237,271 +324,123 @@ const Account = () => {
           </div>
       )}
 
+      {/* Main Page Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* PROFILE HEADER */}
         <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row items-center justify-between mb-8 gap-6">
           <div className="flex items-center gap-6">
-            <div className="relative group">
-              <div className="w-24 h-24 bg-gold rounded-full flex items-center justify-center text-4xl text-black font-bold shadow-md border-4 border-white">
-                {user?.name?.charAt(0).toUpperCase()}
-              </div>
-            </div>
+            <div className="relative group"><div className="w-24 h-24 bg-gold rounded-full flex items-center justify-center text-4xl text-black font-bold shadow-md border-4 border-white">{user?.name?.charAt(0).toUpperCase()}</div></div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-3xl font-serif font-bold text-gray-900">{user?.name}</h1>
-                <ShieldCheck size={20} className="text-blue-500" />
-              </div>
-              <p className="text-gray-500 font-mono text-sm mt-1 flex items-center gap-3">
-                <span>📱 {user?.phone} <button onClick={() => triggerOTP(user?.phone)} className="text-blue-500 text-xs hover:underline ml-1">Edit</button></span> 
-                • 
-                <span>✉️ {user?.email} <button onClick={() => triggerOTP(user?.email)} className="text-blue-500 text-xs hover:underline ml-1">Edit</button></span>
-              </p>
+              <div className="flex items-center gap-2"><h1 className="text-3xl font-serif font-bold text-gray-900">{user?.name}</h1><ShieldCheck size={20} className="text-blue-500" /></div>
+              <p className="text-gray-500 font-mono text-sm mt-1 flex items-center gap-3"><span>📱 {user?.phone} <button onClick={() => triggerOTP(user?.phone)} className="text-blue-500 text-xs hover:underline ml-1">Edit</button></span> • <span>✉️ {user?.email} <button onClick={() => triggerOTP(user?.email)} className="text-blue-500 text-xs hover:underline ml-1">Edit</button></span></p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Link to="/wishlist" className="flex items-center gap-2 text-gray-600 font-bold hover:bg-gray-100 px-4 py-2.5 rounded-lg transition border border-gray-200">
-                <Heart size={18} className="text-red-500" /> Wishlist
-            </Link>
-            <button onClick={handleLogout} className="flex items-center gap-2 text-red-500 font-bold hover:bg-red-50 px-4 py-2.5 rounded-lg transition">
-                <LogOut size={18} /> Sign Out
-            </button>
+            <Link to="/wishlist" className="flex items-center gap-2 text-gray-600 font-bold hover:bg-gray-100 px-4 py-2.5 rounded-lg transition border border-gray-200"><Heart size={18} className="text-red-500" /> Wishlist</Link>
+            <button onClick={handleLogout} className="flex items-center gap-2 text-red-500 font-bold hover:bg-red-50 px-4 py-2.5 rounded-lg transition"><LogOut size={18} /> Sign Out</button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* LEFT COLUMN: VAULTS & ADDRESSES */}
           <div className="lg:col-span-1 space-y-8">
-            
-            {/* MY JEWELRY VAULT */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <div className="flex justify-between items-center mb-6 border-b pb-4">
                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Ruler className="text-gold" size={20}/> My Sizes</h2>
-                 <button onClick={() => setIsEditingProfile(!isEditingProfile)} className="text-xs font-bold text-gold hover:underline">
-                   {isEditingProfile ? 'Cancel' : 'Edit Sizes'}
-                 </button>
+                 <div className="flex items-center gap-3">
+                     <button onClick={() => setSizer({...sizer, show: true, step: 1})} className="text-xs font-bold text-black bg-gold/20 px-2.5 py-1 rounded hover:bg-gold transition flex items-center gap-1"><CircleDashed size={14}/> Sizer</button>
+                     <button onClick={() => setIsEditingProfile(!isEditingProfile)} className="text-xs font-bold text-gold hover:underline">{isEditingProfile ? 'Cancel' : 'Edit'}</button>
+                 </div>
               </div>
-
               <form onSubmit={handleSaveVault} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Gender</label>
-                    <select disabled={!isEditingProfile} value={vaultForm.gender} onChange={e => setVaultForm({...vaultForm, gender: e.target.value})} className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold">
-                      <option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Birthday</label>
-                    <input type="date" disabled={!isEditingProfile} value={vaultForm.dob} onChange={e => setVaultForm({...vaultForm, dob: e.target.value})} className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold"/>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Ring Size</label>
-                    <input disabled={!isEditingProfile} value={vaultForm.ring_size} onChange={e => setVaultForm({...vaultForm, ring_size: e.target.value})} placeholder="e.g. 12" className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold"/>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Bangle Size</label>
-                    <input disabled={!isEditingProfile} value={vaultForm.bangle_size} onChange={e => setVaultForm({...vaultForm, bangle_size: e.target.value})} placeholder="e.g. 2.4" className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold"/>
-                  </div>
-                </div>
+                <div className="grid grid-cols-2 gap-4"><div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 uppercase">Gender</label><select disabled={!isEditingProfile} value={vaultForm.gender} onChange={e => setVaultForm({...vaultForm, gender: e.target.value})} className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div><div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 uppercase">Birthday</label><input type="date" disabled={!isEditingProfile} value={vaultForm.dob} onChange={e => setVaultForm({...vaultForm, dob: e.target.value})} className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold"/></div></div>
+                <div className="grid grid-cols-2 gap-4"><div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 uppercase">Ring Size</label><input disabled={!isEditingProfile} value={vaultForm.ring_size} onChange={e => setVaultForm({...vaultForm, ring_size: e.target.value})} placeholder="e.g. 12" className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold"/></div><div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 uppercase">Bangle Size</label><input disabled={!isEditingProfile} value={vaultForm.bangle_size} onChange={e => setVaultForm({...vaultForm, bangle_size: e.target.value})} placeholder="e.g. 2.4" className="w-full p-2 bg-gray-50 border border-gray-100 rounded text-sm outline-none focus:border-gold"/></div></div>
                 {isEditingProfile && (<button type="submit" className="w-full bg-black text-gold text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-gray-800 transition"><Save size={14}/> Save Updates</button>)}
               </form>
             </div>
 
-            {/* FAMILY & GIFTING VAULT */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <div className="flex justify-between items-center mb-6 border-b pb-4">
                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Users className="text-gold" size={20}/> Family Vault</h2>
-                 {!showRelationForm && !editingRelationId && (
-                     <button onClick={openAddRelationForm} className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition flex items-center gap-1"><Plus size={16}/> Add</button>
-                 )}
+                 {!showRelationForm && !editingRelationId && (<button onClick={openAddRelationForm} className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition flex items-center gap-1"><Plus size={16}/> Add</button>)}
               </div>
-
               {(showRelationForm || editingRelationId) && (
                 <form onSubmit={handleSaveRelation} className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3 relative">
                    <button type="button" onClick={() => {setShowRelationForm(false); setEditingRelationId(null);}} className="absolute top-2 right-2 text-gray-400 hover:text-black"><X size={18}/></button>
-                   <div className="grid grid-cols-2 gap-2">
-                     <input required value={relationForm.name} onChange={e => setRelationForm({...relationForm, name: e.target.value})} placeholder="Name" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                     <input required value={relationForm.relationship} onChange={e => setRelationForm({...relationForm, relationship: e.target.value})} placeholder="Relation" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                   </div>
-                   <div className="grid grid-cols-2 gap-2">
-                     <select required value={relationForm.gender} onChange={e => setRelationForm({...relationForm, gender: e.target.value})} className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold">
-                        <option value="">Gender</option><option value="Male">Male</option><option value="Female">Female</option>
-                     </select>
-                     <input type="date" value={relationForm.dob} onChange={e => setRelationForm({...relationForm, dob: e.target.value})} className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                   </div>
-                   <div className="grid grid-cols-2 gap-2">
-                     <input value={relationForm.ring_size} onChange={e => setRelationForm({...relationForm, ring_size: e.target.value})} placeholder="Ring Size" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                     <input value={relationForm.bangle_size} onChange={e => setRelationForm({...relationForm, bangle_size: e.target.value})} placeholder="Bangle Size" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                   </div>
+                   <div className="grid grid-cols-2 gap-2"><input required value={relationForm.name} onChange={e => setRelationForm({...relationForm, name: e.target.value})} placeholder="Name" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /><input required value={relationForm.relationship} onChange={e => setRelationForm({...relationForm, relationship: e.target.value})} placeholder="Relation" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /></div>
+                   <div className="grid grid-cols-2 gap-2"><select required value={relationForm.gender} onChange={e => setRelationForm({...relationForm, gender: e.target.value})} className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold"><option value="">Gender</option><option value="Male">Male</option><option value="Female">Female</option></select><input type="date" value={relationForm.dob} onChange={e => setRelationForm({...relationForm, dob: e.target.value})} className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /></div>
+                   <div className="grid grid-cols-2 gap-2"><input value={relationForm.ring_size} onChange={e => setRelationForm({...relationForm, ring_size: e.target.value})} placeholder="Ring Size" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /><input value={relationForm.bangle_size} onChange={e => setRelationForm({...relationForm, bangle_size: e.target.value})} placeholder="Bangle Size" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /></div>
                    <button type="submit" className="w-full bg-black text-white text-sm font-bold py-3 rounded-lg hover:bg-gray-800 transition">Save Details</button>
                 </form>
               )}
-
               <div className="space-y-4">
                 {relations.map(rel => (
                   <div key={rel.id} className="border border-gray-100 rounded-xl p-4 relative group hover:border-gold transition bg-white shadow-sm overflow-hidden">
-                      <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition z-10">
-                          <button onClick={() => openEditRelationForm(rel)} className="text-gray-400 hover:text-blue-500 bg-white p-1 rounded-full"><Edit2 size={14}/></button>
-                          <button onClick={() => handleDeleteRelation(rel.id)} className="text-gray-400 hover:text-red-500 bg-white p-1 rounded-full"><Trash2 size={14}/></button>
-                      </div>
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-500">{rel.name.charAt(0)}</div>
-                        <div>
-                          <p className="font-bold text-gray-900 text-sm">{rel.name} <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded ml-1">{rel.relationship}</span></p>
-                          <p className="text-[11px] text-gray-500 mt-0.5">Ring: {rel.ring_size || 'N/A'} | Bangle: {rel.bangle_size || 'N/A'}</p>
-                        </div>
-                      </div>
-                      <button onClick={() => navigate(`/collections/all?for=${rel.name}&gender=${rel.gender}&ring=${rel.ring_size}`)} className="w-full bg-gold/10 text-gold-dark font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gold hover:text-black transition">
-                        <Gift size={14} /> Shop for {rel.name}
-                      </button>
+                      <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition z-10"><button onClick={() => openEditRelationForm(rel)} className="text-gray-400 hover:text-blue-500 bg-white p-1 rounded-full"><Edit2 size={14}/></button><button onClick={() => handleDeleteRelation(rel.id)} className="text-gray-400 hover:text-red-500 bg-white p-1 rounded-full"><Trash2 size={14}/></button></div>
+                      <div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-500">{rel.name.charAt(0)}</div><div><p className="font-bold text-gray-900 text-sm">{rel.name} <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded ml-1">{rel.relationship}</span></p><p className="text-[11px] text-gray-500 mt-0.5">Ring: {rel.ring_size || 'N/A'} | Bangle: {rel.bangle_size || 'N/A'}</p></div></div>
+                      <button onClick={() => navigate(`/collections/all?for=${rel.name}&gender=${rel.gender}&ring=${rel.ring_size}`)} className="w-full bg-gold/10 text-gold-dark font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gold hover:text-black transition"><Gift size={14} /> Shop for {rel.name}</button>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* SAVED ADDRESSES */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex justify-between items-center mb-6 border-b pb-4">
-                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><MapPin className="text-gold" size={20}/> Saved Addresses</h2>
-                 {!showAddForm && !editingId && (<button onClick={openAddForm} className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition"><Plus size={16}/></button>)}
-              </div>
+              <div className="flex justify-between items-center mb-6 border-b pb-4"><h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><MapPin className="text-gold" size={20}/> Saved Addresses</h2>{!showAddForm && !editingId && (<button onClick={openAddForm} className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition"><Plus size={16}/></button>)}</div>
               {(showAddForm || editingId) && (
-                <form onSubmit={handleSaveAddress} className="mb-6 bg-gray-50 p-4 rounded-xl space-y-3 relative">
-                   <button type="button" onClick={() => {setShowAddForm(false); setEditingId(null);}} className="absolute top-2 right-2 text-gray-400"><X size={18}/></button>
-                   <input required value={addressForm.full_name} onChange={e => setAddressForm({...addressForm, full_name: e.target.value})} placeholder="Name" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                   <input required value={addressForm.phone} onChange={e => setAddressForm({...addressForm, phone: e.target.value})} placeholder="Phone" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                   <textarea required value={addressForm.address} onChange={e => setAddressForm({...addressForm, address: e.target.value})} placeholder="Address" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" rows="2"></textarea>
-                   <div className="flex gap-2">
-                     <input required value={addressForm.city} onChange={e => setAddressForm({...addressForm, city: e.target.value})} placeholder="City" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                     <input required value={addressForm.pincode} onChange={e => setAddressForm({...addressForm, pincode: e.target.value})} placeholder="Pincode" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" />
-                   </div>
-                   <button type="submit" className="w-full bg-black text-white text-sm font-bold py-3 rounded-lg hover:bg-gray-800 transition">Save Address</button>
-                </form>
+                <form onSubmit={handleSaveAddress} className="mb-6 bg-gray-50 p-4 rounded-xl space-y-3 relative"><button type="button" onClick={() => {setShowAddForm(false); setEditingId(null);}} className="absolute top-2 right-2 text-gray-400"><X size={18}/></button><input required value={addressForm.full_name} onChange={e => setAddressForm({...addressForm, full_name: e.target.value})} placeholder="Name" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /><input required value={addressForm.phone} onChange={e => setAddressForm({...addressForm, phone: e.target.value})} placeholder="Phone" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /><textarea required value={addressForm.address} onChange={e => setAddressForm({...addressForm, address: e.target.value})} placeholder="Address" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" rows="2"></textarea><div className="flex gap-2"><input required value={addressForm.city} onChange={e => setAddressForm({...addressForm, city: e.target.value})} placeholder="City" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /><input required value={addressForm.pincode} onChange={e => setAddressForm({...addressForm, pincode: e.target.value})} placeholder="Pincode" className="w-full p-2.5 text-sm border rounded outline-none focus:border-gold" /></div><button type="submit" className="w-full bg-black text-white text-sm font-bold py-3 rounded-lg hover:bg-gray-800 transition">Save Address</button></form>
               )}
               <div className="space-y-4">
                 {addresses.map(addr => (
-                  <div key={addr.id} className="border border-gray-100 rounded-xl p-4 relative group hover:border-gold transition">
-                      <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                          <button onClick={() => openEditForm(addr)} className="text-gray-400 hover:text-blue-500"><Edit2 size={14}/></button>
-                          <button onClick={() => handleDeleteAddress(addr.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14}/></button>
-                      </div>
-                      <p className="font-bold text-gray-900 text-sm">{addr.full_name}</p>
-                      <p className="text-xs text-gray-500 mt-1">{addr.address}</p>
-                      <p className="text-xs text-gray-500">{addr.city} - {addr.pincode}</p>
-                  </div>
+                  <div key={addr.id} className="border border-gray-100 rounded-xl p-4 relative group hover:border-gold transition"><div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition"><button onClick={() => openEditForm(addr)} className="text-gray-400 hover:text-blue-500"><Edit2 size={14}/></button><button onClick={() => handleDeleteAddress(addr.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14}/></button></div><p className="font-bold text-gray-900 text-sm">{addr.full_name}</p><p className="text-xs text-gray-500 mt-1">{addr.address}</p><p className="text-xs text-gray-500">{addr.city} - {addr.pincode}</p></div>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* RIGHT COLUMN: DEAL LOCKER & ORDER HISTORY */}
           <div className="lg:col-span-2 space-y-8">
-            
-            {/* 🌟 NEW: AURA DEAL LOCKER */}
             <div className="bg-gradient-to-br from-gray-900 to-black rounded-2xl shadow-lg border border-gray-800 overflow-hidden text-white relative">
               <div className="absolute top-0 right-0 w-64 h-64 bg-gold/10 rounded-full blur-3xl"></div>
-              
-              <div className="p-6 border-b border-gray-800 flex items-center justify-between relative z-10">
-                <div className="flex items-center gap-3">
-                    <Bot className="text-gold" size={24}/>
-                    <h2 className="text-xl font-bold font-serif flex items-center gap-2">Aura Deal Locker</h2>
-                </div>
-                <span className="bg-gold/20 text-gold text-xs font-bold px-3 py-1 rounded-full border border-gold/30">Active Bargains</span>
-              </div>
-
+              <div className="p-6 border-b border-gray-800 flex items-center justify-between relative z-10"><div className="flex items-center gap-3"><Bot className="text-gold" size={24}/><h2 className="text-xl font-bold font-serif flex items-center gap-2">Aura Deal Locker</h2></div><span className="bg-gold/20 text-gold text-xs font-bold px-3 py-1 rounded-full border border-gold/30">Active Bargains</span></div>
               <div className="p-6 relative z-10">
                 {activeDeals.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-400 text-sm mb-4">You have no active negotiated prices.</p>
-                    <Link to="/collections/all" className="text-gold text-sm font-bold hover:underline">Start bargaining with Aura →</Link>
-                  </div>
+                  <div className="text-center py-8"><p className="text-gray-400 text-sm mb-4">You have no active negotiated prices.</p><Link to="/collections/all" className="text-gold text-sm font-bold hover:underline">Start bargaining with Aura →</Link></div>
                 ) : (
                   <div className="space-y-4">
                     {activeDeals.map((deal, idx) => (
-                      <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-4 flex justify-between items-center backdrop-blur-sm hover:border-gold/50 transition">
-                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-white/10 rounded-lg flex items-center justify-center">
-                               <Gift className="text-gold" />
-                            </div>
-                            <div>
-                               <p className="font-bold text-gray-100">{deal.product_name}</p>
-                               <div className="flex items-center gap-2 mt-1">
-                                 <span className="text-xs text-gray-400 line-through">₹{deal.original_price}</span>
-                                 <span className="text-sm font-bold text-gold">₹{deal.negotiated_price}</span>
-                               </div>
-                            </div>
-                         </div>
-                         <div className="text-right flex flex-col items-end gap-2">
-                            <span className="text-[10px] text-gray-400 flex items-center gap-1"><Timer size={10}/> Expires in {deal.expires_in}</span>
-                            <button onClick={() => navigate(`/product/${deal.product_id}`)} className="bg-gold text-black text-xs font-bold px-4 py-2 rounded-lg hover:bg-white transition">Claim Deal</button>
-                         </div>
-                      </div>
+                      <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-4 flex justify-between items-center backdrop-blur-sm hover:border-gold/50 transition"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-white/10 rounded-lg flex items-center justify-center"><Gift className="text-gold" /></div><div><p className="font-bold text-gray-100">{deal.product_name}</p><div className="flex items-center gap-2 mt-1"><span className="text-xs text-gray-400 line-through">₹{deal.original_price}</span><span className="text-sm font-bold text-gold">₹{deal.negotiated_price}</span></div></div></div><div className="text-right flex flex-col items-end gap-2"><span className="text-[10px] text-gray-400 flex items-center gap-1"><Timer size={10}/> Expires in {deal.expires_in}</span><button onClick={() => navigate(`/product/${deal.product_id}`)} className="bg-gold text-black text-xs font-bold px-4 py-2 rounded-lg hover:bg-white transition">Claim Deal</button></div></div>
                     ))}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* ORDER HISTORY */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-3"><Package className="text-gold" /><h2 className="text-xl font-bold text-gray-900">Purchase History</h2></div>
-                <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full">{orders.length} Orders</span>
-              </div>
-
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between"><div className="flex items-center gap-3"><Package className="text-gold" /><h2 className="text-xl font-bold text-gray-900">Purchase History</h2></div><span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full">{orders.length} Orders</span></div>
               {loading ? (
                 <div className="p-16 flex justify-center"><div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin"></div></div>
               ) : orders.length === 0 ? (
-                <div className="p-16 text-center">
-                    <Package size={48} className="text-gray-200 mx-auto mb-4" />
-                    <p className="text-gray-500 mb-6 text-lg">You haven't placed any orders yet.</p>
-                    <Link to="/collections/all" className="bg-black text-gold px-8 py-3 rounded-full font-bold hover:bg-gray-800 transition">Start Exploring</Link>
-                </div>
+                <div className="p-16 text-center"><Package size={48} className="text-gray-200 mx-auto mb-4" /><p className="text-gray-500 mb-6 text-lg">You haven't placed any orders yet.</p><Link to="/collections/all" className="bg-black text-gold px-8 py-3 rounded-full font-bold hover:bg-gray-800 transition">Start Exploring</Link></div>
               ) : orders.map(order => (
                 <div key={order.id} className="p-6 border-b last:border-0 hover:bg-gray-50/50 transition">
                   <div className="flex flex-col md:flex-row justify-between md:items-start mb-5 gap-4">
                     <div>
-                      <div className="flex items-center gap-3 mb-1">
-                          <p className="font-bold text-gray-900">Order #{order.id}</p>
-                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-sm uppercase tracking-wider ${order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>{order.status}</span>
-                      </div>
+                      <div className="flex items-center gap-3 mb-1"><p className="font-bold text-gray-900">Order #{order.id}</p><span className={`text-[10px] font-bold px-2.5 py-1 rounded-sm uppercase tracking-wider ${order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>{order.status}</span></div>
                       <p className="text-xs text-gray-500">Placed on {new Date(order.created_at).toLocaleDateString()}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-2xl text-gray-900 tracking-tight">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p>
-                    </div>
+                    <div className="text-right"><p className="font-bold text-2xl text-gray-900 tracking-tight">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p></div>
                   </div>
                   <div className="bg-white rounded-xl p-4 border border-gray-100">
-                    <div className="space-y-2">
-                      {order.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-sm">
-                          <span className="font-medium text-gray-800">{item.quantity}x {item.product_name}</span>
-                          <span className="text-gray-500 font-medium">₹{parseFloat(item.price).toLocaleString('en-IN')}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <div className="space-y-2">{order.items.map((item, idx) => (<div key={idx} className="flex justify-between items-center text-sm"><span className="font-medium text-gray-800">{item.quantity}x {item.product_name}</span><span className="text-gray-500 font-medium">₹{parseFloat(item.price).toLocaleString('en-IN')}</span></div>))}</div>
                   </div>
-                  
-                  {/* 🌟 NEW: Action buttons for Order Edit / Cancel */}
                   {(order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED') && (
                       <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-100">
                          <button onClick={() => setEditAddressModal({ show: true, order, form: { address: order.address, city: order.city, pincode: order.pincode, phone_number: order.phone_number }})} className="text-xs font-bold text-gray-600 bg-gray-100 px-3 py-2 rounded-md hover:bg-gray-200 transition">Change Address</button>
-                         {order.is_gift && (
-                             <button onClick={() => setEditGiftModal({ show: true, order, form: { gift_sender: order.gift_sender, gift_message: order.gift_message, gift_occasion: order.gift_occasion, gift_effect: order.gift_effect }})} className="text-xs font-bold text-gold-dark bg-gold/10 px-3 py-2 rounded-md hover:bg-gold/20 transition">Edit Gift Options</button>
-                         )}
+                         {order.is_gift && (<button onClick={() => setEditGiftModal({ show: true, order, form: { gift_sender: order.gift_sender, gift_message: order.gift_message, gift_occasion: order.gift_occasion, gift_effect: order.gift_effect }})} className="text-xs font-bold text-gold-dark bg-gold/10 px-3 py-2 rounded-md hover:bg-gold/20 transition">Edit Gift Options</button>)}
                          <button onClick={() => setCancelModal({ show: true, order })} className="text-xs font-bold text-red-600 ml-auto hover:underline">Cancel Order</button>
                       </div>
                   )}
-
                 </div>
               ))}
             </div>
-
           </div>
-
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import { 
   ShoppingBag, Heart, MapPin, Info, X, MessageCircle, Send, Loader2, Maximize2, 
-  ChevronLeft, ChevronRight, Star, ShieldCheck 
+  ChevronLeft, ChevronRight, Star, ShieldCheck, CreditCard as CreditCardIcon, Scan, CircleDashed 
 } from 'lucide-react';
 import { useCart } from '../context/CartContext'; 
 import { useAuth } from '../context/AuthContext'; 
@@ -18,14 +18,12 @@ const ProductDetails = () => {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // --- IMAGE GALLERY STATES ---
   const [allImages, setAllImages] = useState([]);
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [isZooming, setIsZooming] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
 
-  // --- REVIEWS STATES ---
   const [reviews, setReviews] = useState([]);
   const [reviewEligibility, setReviewEligibility] = useState({ canReview: false, hasPurchased: false, hasReviewed: false });
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
@@ -53,21 +51,29 @@ const ProductDetails = () => {
   const [dealStatus, setDealStatus] = useState(null); 
   const [chatMessages, setChatMessages] = useState([]);
 
-  // --- CHAT PERSISTENCE & TIMEOUT ENGINE ---
+  const [sizer, setSizer] = useState({ show: false, step: 1, type: 'ring', cardPx: 280, circlePx: 120 });
+
   const CHAT_STORAGE_KEY = `aabarnam_chat_${id}`;
   const [isChatFrozen, setIsChatFrozen] = useState(false);
 
-  // Load chat from hard drive on boot
+  // 🌟 NEW: Lock background scrolling when ANY modal is open
+  useEffect(() => {
+    if (sizer.show || showFullscreen || showBreakdown || showChat) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = 'unset';
+    }
+    return () => { document.body.style.overflow = 'unset'; }
+  }, [sizer.show, showFullscreen, showBreakdown, showChat]);
+
   useEffect(() => {
       const savedStr = localStorage.getItem(CHAT_STORAGE_KEY);
       if (savedStr) {
           const savedData = JSON.parse(savedStr);
           if (Date.now() - savedData.lastActivity > 10 * 60 * 1000) {
-              // Idle for > 10 mins! Freeze the chat.
               setIsChatFrozen(true);
               setChatMessages(savedData.messages); 
           } else {
-              // Resume chat seamlessly
               setChatMessages(savedData.messages);
               if (savedData.dealStatus) setDealStatus(savedData.dealStatus);
               if (savedData.liveBreakdown) setLiveBreakdown(savedData.liveBreakdown);
@@ -75,7 +81,6 @@ const ProductDetails = () => {
       }
   }, [id]);
 
-  // Save chat to hard drive on every new message
   useEffect(() => {
       if (chatMessages.length > 0 && !isChatFrozen) {
           localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
@@ -94,7 +99,6 @@ const ProductDetails = () => {
 
   useEffect(() => { showChatRef.current = showChat; if (showChat) setUnreadCount(0); }, [showChat]);
 
-  // --- FETCH PRODUCT & REVIEWS ---
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -125,7 +129,6 @@ const ProductDetails = () => {
     fetchData();
   }, [id, user]);
 
-  // --- WEBSOCKET INITIALIZATION ---
   useEffect(() => {
     if (!socketRef.current && !isChatFrozen) {
       socketRef.current = io('http://localhost:5000');
@@ -180,13 +183,11 @@ const ProductDetails = () => {
       if (dealStatus === 'accepted') return; 
       
       hesitationTimerRef.current = setTimeout(() => {
-          // Changed to < 1 so she only panics ONCE per conversation
           if (socketRef.current && dealStatus !== 'accepted' && proactiveOffersCount.current < 1) {
               socketRef.current.emit('user_hesitating');
               proactiveOffersCount.current += 1; 
-              // Removed the recursive call so she doesn't keep dropping the price endlessly
           }
-      }, 60000); // Changed to 60 seconds! Give the user time to think.
+      }, 60000); 
   };
 
   useEffect(() => {
@@ -229,7 +230,7 @@ const ProductDetails = () => {
     const productToCart = { 
         ...product, 
         deal_token: liveBreakdown?.deal_token || null,
-        chat_transcript: chatMessages, // 🌟 Save log to cart
+        chat_transcript: chatMessages,
         price_breakdown: { 
             ...liveBreakdown, 
             original_price: originalPrice, 
@@ -299,6 +300,14 @@ const ProductDetails = () => {
     setZoomPos({ x, y });
   };
 
+  // 🌟 REFINED MATH: Indian Standard Size = Circumference - 40
+  const pxPerMm = sizer.cardPx / 85.6; 
+  const currentMm = sizer.circlePx / pxPerMm;
+  const currentCircumference = currentMm * Math.PI;
+  const calculatedRingSize = Math.max(1, Math.min(35, Math.round(currentCircumference - 40))); 
+  
+  const calculatedBangleSize = currentMm < 55.5 ? '2.2' : currentMm < 58.7 ? '2.4' : currentMm < 61.9 ? '2.6' : currentMm < 65.1 ? '2.8' : '2.10';
+
   if (loading) return <div className="h-screen flex items-center justify-center text-gold font-bold text-xl animate-pulse">Loading treasure...</div>;
   if (!product) return <div className="h-screen flex items-center justify-center text-gray-500">Product not found.</div>;
 
@@ -310,6 +319,89 @@ const ProductDetails = () => {
   return (
     <div className="bg-[#faf9f6] min-h-screen pt-10 pb-20 animate-fade-in relative font-sans">
       
+      {/* 🌟 ENHANCED SIZER MODAL (Scrollable & Larger) */}
+      {sizer.show && (
+          <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl animate-fade-in-up flex flex-col max-h-[90vh] overflow-hidden">
+                  
+                  {/* Fixed Header */}
+                  <div className="bg-gradient-to-r from-gray-900 to-black p-4 flex justify-between items-center text-white border-b border-gold/30 shrink-0">
+                      <h3 className="font-serif font-bold text-lg text-gold flex items-center gap-2">
+                          <Scan size={20} /> Aabarnam Digital Sizer
+                      </h3>
+                      <button onClick={() => setSizer({...sizer, show: false})} className="text-gray-400 hover:text-white transition"><X size={20}/></button>
+                  </div>
+
+                  {/* Scrollable Body */}
+                  <div className="overflow-y-auto p-6 md:p-8 flex flex-col items-center text-center custom-scrollbar">
+                      {sizer.step === 1 && (
+                          <div className="w-full max-w-lg mx-auto">
+                              <h4 className="font-bold text-gray-900 mb-2 text-xl">Step 1: Calibrate Screen</h4>
+                              <p className="text-sm text-gray-500 mb-8">Place a standard Debit/Credit Card flat against your screen. Adjust the slider until the blue box exactly matches your physical card.</p>
+                              
+                              <div className="w-full h-[350px] bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center mb-8 shadow-inner overflow-hidden relative">
+                                  <div 
+                                    style={{ width: `${sizer.cardPx}px`, height: `${sizer.cardPx * (53.98 / 85.6)}px` }} 
+                                    className="bg-blue-600 rounded-xl shadow-lg border-2 border-white/50 flex flex-col justify-between p-4 transition-all duration-75"
+                                  >
+                                      <div className="flex justify-between items-center opacity-30">
+                                          <div className="w-12 h-8 bg-yellow-400 rounded-md"></div>
+                                          <CreditCardIcon className="text-white" size={32} />
+                                      </div>
+                                      <div className="w-3/4 h-3 bg-white/30 rounded mt-auto"></div>
+                                  </div>
+                              </div>
+
+                              <input type="range" min="150" max="600" value={sizer.cardPx} onChange={(e) => setSizer({...sizer, cardPx: Number(e.target.value)})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black mb-6" />
+                              <button onClick={() => setSizer({...sizer, step: 2})} className="w-full bg-black text-gold py-4 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg">Confirm Calibration</button>
+                          </div>
+                      )}
+
+                      {sizer.step === 2 && (
+                          <div className="w-full max-w-lg mx-auto">
+                              <h4 className="font-bold text-gray-900 mb-2 text-xl">Step 2: Find Your Size</h4>
+                              
+                              {/* 🌟 Warning Notice about Inside Edge */}
+                              <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded-lg mb-6 text-sm flex items-start gap-2 text-left shadow-sm">
+                                 <Info className="flex-shrink-0 mt-0.5 text-orange-600" size={18} />
+                                 <p><strong>Crucial:</strong> Place your existing jewelry on the screen. The dotted circle must touch the <b>INSIDE EDGE</b> of your ring/bangle. Do not measure the outside thickness!</p>
+                              </div>
+                              
+                              <div className="flex gap-2 bg-gray-100 p-1 rounded-lg mb-6 justify-center w-fit mx-auto">
+                                  <button onClick={() => setSizer({...sizer, type: 'ring', circlePx: 120})} className={`px-6 py-2 rounded-md text-sm font-bold transition ${sizer.type === 'ring' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-black'}`}>💍 Ring</button>
+                                  <button onClick={() => setSizer({...sizer, type: 'bangle', circlePx: 250})} className={`px-6 py-2 rounded-md text-sm font-bold transition ${sizer.type === 'bangle' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-black'}`}>⭕ Bangle</button>
+                              </div>
+
+                              <div className="w-full h-[350px] bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center mb-6 shadow-inner relative overflow-hidden">
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
+                                      <div className="w-px h-full bg-black"></div><div className="w-full h-px bg-black absolute"></div>
+                                  </div>
+                                  <div 
+                                    style={{ width: `${sizer.circlePx}px`, height: `${sizer.circlePx}px` }} 
+                                    className="rounded-full border-[3px] border-dashed border-gold flex items-center justify-center bg-gold/10 transition-all duration-75 relative"
+                                  >
+                                      <span className="text-[10px] text-gold-dark font-bold font-mono bg-white/90 px-2 py-0.5 rounded shadow-sm border border-gold/20">{currentMm.toFixed(1)} mm</span>
+                                  </div>
+                              </div>
+
+                              <input type="range" min="30" max="400" value={sizer.circlePx} onChange={(e) => setSizer({...sizer, circlePx: Number(e.target.value)})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black mb-6" />
+                              
+                              <div className="bg-green-50 w-full p-4 rounded-xl border border-green-200 mb-6 shadow-inner">
+                                  <p className="text-xs text-green-800 uppercase tracking-widest font-bold">Estimated Standard Size</p>
+                                  <p className="text-3xl font-serif text-green-900 mt-1">{sizer.type === 'ring' ? `Size ${calculatedRingSize}` : `Size ${calculatedBangleSize}`}</p>
+                              </div>
+
+                              <div className="flex gap-3 w-full pb-4">
+                                  <button onClick={() => setSizer({...sizer, step: 1})} className="flex-1 bg-gray-100 text-gray-800 py-3 rounded-xl font-bold hover:bg-gray-200 transition">Back</button>
+                                  <button onClick={() => setSizer({...sizer, show: false})} className="flex-[2] bg-black text-gold py-3 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg">Done</button>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {showFullscreen && (
         <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center backdrop-blur-md transition-opacity duration-300">
            <button onClick={() => setShowFullscreen(false)} className="absolute top-8 right-8 text-white hover:text-gold transition bg-white/10 p-3 rounded-full z-50"><X size={28} /></button>
@@ -336,7 +428,7 @@ const ProductDetails = () => {
       )}
 
       {showBreakdown && liveBreakdown && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
            <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-fade-in-up transition-all duration-500 border border-gold/30">
               <div className="p-5 border-b flex justify-between items-center bg-gray-50">
                  <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2"><Info size={20} className="text-gold"/> Transparent Pricing</h3>
@@ -347,7 +439,6 @@ const ProductDetails = () => {
                     <span>Gold Value <br/><span className="text-[11px] text-gray-400">({product.net_weight}g × ₹{liveBreakdown.metal_rate}/g)</span></span>
                     <span className="font-medium">₹{parseFloat(liveBreakdown.raw_metal_value).toFixed(2)}</span>
                  </div>
-                 {/* CHANGED WASTAGE TO VALUE ADDITION (VA) */}
                  <div className="flex justify-between text-gray-600 transition-colors duration-500">
                     <span>Value Addition (VA) <br/>
                         <span className="text-[11px] text-gray-400">
@@ -377,6 +468,7 @@ const ProductDetails = () => {
         </div>
       )}
 
+      {/* Main UI starts here */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
           
@@ -449,7 +541,7 @@ const ProductDetails = () => {
             </div>
 
             {parseFloat(product.stone_weight) > 0.200 ? (
-                <div className="grid grid-cols-2 gap-4 mb-8">
+                <div className="grid grid-cols-2 gap-4 mb-4">
                    <div className="p-5 border border-gray-100 rounded-2xl bg-white flex flex-col justify-center shadow-sm hover:shadow-md transition">
                       <span className="text-[11px] text-gray-400 uppercase tracking-widest mb-1 font-semibold">Total Item Weight (Gross)</span>
                       <span className="font-bold text-gray-900 text-lg">{product.gross_weight} g</span>
@@ -467,10 +559,22 @@ const ProductDetails = () => {
                    </div>
                 </div>
             ) : (
-                <div className="mb-8 p-5 border border-gray-100 rounded-2xl bg-white flex justify-between items-center shadow-sm hover:shadow-md transition">
+                <div className="mb-4 p-5 border border-gray-100 rounded-2xl bg-white flex justify-between items-center shadow-sm hover:shadow-md transition">
                    <span className="text-[11px] text-gray-400 uppercase tracking-widest font-semibold flex items-center gap-2">Total Item Weight (Gross)</span>
                    <span className="font-bold text-gray-900 text-2xl">{product.gross_weight} g</span>
                 </div>
+            )}
+
+            {(product.item_type.toLowerCase().includes('ring') || product.item_type.toLowerCase().includes('bangle')) && (
+               <div className="mb-8 flex items-center justify-between bg-gold/5 border border-gold/30 p-4 rounded-xl shadow-sm">
+                   <div>
+                       <p className="font-bold text-gray-900 text-sm">Not sure about the size?</p>
+                       <p className="text-xs text-gray-600">Measure instantly using your screen.</p>
+                   </div>
+                   <button onClick={() => setSizer({...sizer, show: true, step: 1})} className="bg-black text-gold text-xs font-bold px-4 py-2.5 rounded-lg hover:bg-gray-800 transition flex items-center gap-2 shadow-md">
+                       <CircleDashed size={14}/> Find My Fit
+                   </button>
+               </div>
             )}
 
             <div className="mb-10 bg-white border border-gray-100 p-5 rounded-2xl shadow-sm">
@@ -577,10 +681,7 @@ const ProductDetails = () => {
         <div className="fixed bottom-6 right-6 min-w-[320px] max-w-[600px] w-80 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-2xl border border-gray-100 overflow-hidden z-[100] animate-fade-in-up flex flex-col resize" style={{ height: '480px', direction: 'rtl' }}>
           <div className="flex flex-col h-full w-full" style={{ direction: 'ltr' }}>
             <div className="bg-gradient-to-r from-gray-900 to-black p-4 text-white flex justify-between items-center border-b border-gray-800">
-              
-              {/* 🌟 UPDATED HEADER */}
               <div className="flex items-center gap-3"><div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div><span className="font-bold text-sm tracking-wide">Aura of Aabarnam</span></div>
-              
               <button onClick={() => setShowChat(false)} className="hover:text-gold transition bg-white/10 p-1.5 rounded-lg"><X size={16} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#f8f9fa] flex flex-col">
@@ -607,10 +708,7 @@ const ProductDetails = () => {
                     <div className="flex gap-2 items-center">
                         <div className="relative flex-1">
                             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm z-10 pointer-events-none">₹</span>
-                            
-                            {/* 🌟 UPDATED PLACEHOLDER */}
                             <input type="text" value={userBid} onChange={(e) => { setUserBid(e.target.value); resetHesitationTimer(); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} placeholder={dealStatus === 'accepted' ? "Deal Locked!" : (isTyping || onCooldown) ? "Aura is replying..." : "Your counter-offer..."} disabled={dealStatus === 'accepted' || isTyping || onCooldown} className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" />
-                            
                         </div>
                         <button onClick={handleSendMessage} disabled={isTyping || onCooldown || !userBid.trim() || dealStatus === 'accepted'} className={`p-3 rounded-xl transition shadow-md flex items-center justify-center ${(!userBid.trim() || dealStatus === 'accepted' || isTyping || onCooldown) ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-black text-gold hover:bg-gray-800 hover:-translate-y-0.5'}`}><Send size={20} /></button>
                     </div>
