@@ -56,7 +56,6 @@ const ProductDetails = () => {
   const CHAT_STORAGE_KEY = `aabarnam_chat_${id}`;
   const [isChatFrozen, setIsChatFrozen] = useState(false);
 
-  // 🌟 NEW: Lock background scrolling when ANY modal is open
   useEffect(() => {
     if (sizer.show || showFullscreen || showBreakdown || showChat) {
         document.body.style.overflow = 'hidden';
@@ -112,7 +111,9 @@ const ProductDetails = () => {
             setLiveBreakdown({
                 ...prodRes.data.price_breakdown,
                 wastage_pct: prodRes.data.price_breakdown.wastage_pct !== undefined ? prodRes.data.price_breakdown.wastage_pct : prodRes.data.wastage_pct,
-                final_total_price: Math.round(prodRes.data.price_breakdown.final_total_price)
+                final_total_price: Math.round(prodRes.data.price_breakdown.final_total_price),
+                // 🌟 THE FIX: Lock the original price down so admin updates don't break the UI math
+                original_listed_price: Math.round(prodRes.data.price_breakdown.final_total_price) 
             });
         }
 
@@ -162,6 +163,7 @@ const ProductDetails = () => {
               making_charge: data.newBreakdown.making_charge !== undefined ? data.newBreakdown.making_charge : prev.making_charge,
               wastage_value: data.newBreakdown.wastage_value !== undefined ? data.newBreakdown.wastage_value : prev.wastage_value,
               final_total_price: data.newBreakdown.final_total_price,
+              original_listed_price: prev.original_listed_price || Math.round(product.price_breakdown.final_total_price),
               deal_token: data.deal_token || prev?.deal_token
           }));
           resetHesitationTimer();
@@ -300,13 +302,13 @@ const ProductDetails = () => {
     setZoomPos({ x, y });
   };
 
-  // 🌟 REFINED MATH: Indian Standard Size = Circumference - 40
   const pxPerMm = sizer.cardPx / 85.6; 
   const currentMm = sizer.circlePx / pxPerMm;
   const currentCircumference = currentMm * Math.PI;
   const calculatedRingSize = Math.max(1, Math.min(35, Math.round(currentCircumference - 40))); 
   
   const calculatedBangleSize = currentMm < 55.5 ? '2.2' : currentMm < 58.7 ? '2.4' : currentMm < 61.9 ? '2.6' : currentMm < 65.1 ? '2.8' : '2.10';
+
 
   if (loading) return <div className="h-screen flex items-center justify-center text-gold font-bold text-xl animate-pulse">Loading treasure...</div>;
   if (!product) return <div className="h-screen flex items-center justify-center text-gray-500">Product not found.</div>;
@@ -319,12 +321,11 @@ const ProductDetails = () => {
   return (
     <div className="bg-[#faf9f6] min-h-screen pt-10 pb-20 animate-fade-in relative font-sans">
       
-      {/* 🌟 ENHANCED SIZER MODAL (Scrollable & Larger) */}
+      {/* SIZER MODAL */}
       {sizer.show && (
           <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl animate-fade-in-up flex flex-col max-h-[90vh] overflow-hidden">
                   
-                  {/* Fixed Header */}
                   <div className="bg-gradient-to-r from-gray-900 to-black p-4 flex justify-between items-center text-white border-b border-gold/30 shrink-0">
                       <h3 className="font-serif font-bold text-lg text-gold flex items-center gap-2">
                           <Scan size={20} /> Aabarnam Digital Sizer
@@ -332,7 +333,6 @@ const ProductDetails = () => {
                       <button onClick={() => setSizer({...sizer, show: false})} className="text-gray-400 hover:text-white transition"><X size={20}/></button>
                   </div>
 
-                  {/* Scrollable Body */}
                   <div className="overflow-y-auto p-6 md:p-8 flex flex-col items-center text-center custom-scrollbar">
                       {sizer.step === 1 && (
                           <div className="w-full max-w-lg mx-auto">
@@ -361,7 +361,6 @@ const ProductDetails = () => {
                           <div className="w-full max-w-lg mx-auto">
                               <h4 className="font-bold text-gray-900 mb-2 text-xl">Step 2: Find Your Size</h4>
                               
-                              {/* 🌟 Warning Notice about Inside Edge */}
                               <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded-lg mb-6 text-sm flex items-start gap-2 text-left shadow-sm">
                                  <Info className="flex-shrink-0 mt-0.5 text-orange-600" size={18} />
                                  <p><strong>Crucial:</strong> Place your existing jewelry on the screen. The dotted circle must touch the <b>INSIDE EDGE</b> of your ring/bangle. Do not measure the outside thickness!</p>
@@ -401,6 +400,7 @@ const ProductDetails = () => {
               </div>
           </div>
       )}
+
 
       {showFullscreen && (
         <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center backdrop-blur-md transition-opacity duration-300">
@@ -530,7 +530,8 @@ const ProductDetails = () => {
                 <div className="mt-4 bg-green-50 border border-green-200 p-4 rounded-xl animate-fade-in">
                     <h4 className="font-bold text-green-800 flex items-center gap-2">🎉 Deal Struck!</h4>
                     <p className="text-green-700 text-sm mt-1">
-                        You successfully negotiated <b>₹{Math.round(product.price_breakdown.final_total_price - liveBreakdown.final_total_price)}</b> off the original price!
+                        {/* 🌟 THE FIX: Using original_listed_price here */}
+                        You successfully negotiated <b>₹{Math.round((liveBreakdown.original_listed_price || product.price_breakdown.final_total_price) - liveBreakdown.final_total_price)}</b> off the original price!
                     </p>
                 </div>
               ) : (

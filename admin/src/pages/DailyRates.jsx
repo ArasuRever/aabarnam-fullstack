@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Activity, RefreshCw, TrendingUp, TrendingDown, Settings, ShieldCheck, Save, Edit2, MapPin, Zap } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -14,10 +14,11 @@ const DailyRates = () => {
   // Configuration State
   const [premium, setPremium] = useState(3.0); 
   const [intervalHrs, setIntervalHrs] = useState(1);
+  const [activeCity, setActiveCity] = useState('Global'); // 🌟 NEW: Active City State
 
   // TICKER STATES
-  const [anchorMarkets, setAnchorMarkets] = useState(null); // The TRUE price from backend
-  const [bullionMarkets, setBullionMarkets] = useState(null); // The 1-second flashing price
+  const [anchorMarkets, setAnchorMarkets] = useState(null); 
+  const [bullionMarkets, setBullionMarkets] = useState(null); 
   const [lastTick, setLastTick] = useState(new Date());
 
   const fetchData = async () => {
@@ -29,6 +30,7 @@ const DailyRates = () => {
       setRates(ratesRes.data);
       setIntervalHrs(configRes.data.interval);
       setPremium(configRes.data.premium);
+      setActiveCity(configRes.data.activeCity); // 🌟 Sync active city
       setLoading(false);
     } catch (err) {
       toast.error('Failed to load market data');
@@ -36,53 +38,41 @@ const DailyRates = () => {
     }
   };
 
-  // 1. Fetch the TRUE data every 30 seconds
   const fetchBullionData = async () => {
     try {
       const res = await axios.get('http://localhost:5000/api/rates/regional-bullion');
       setAnchorMarkets(res.data.markets);
-      setBullionMarkets(res.data.markets); // Sync them initially
+      setBullionMarkets(res.data.markets); 
     } catch (err) { console.error("Bullion fetch error"); }
   };
 
   useEffect(() => { 
       fetchData(); 
       fetchBullionData();
-      
-      // Fetch true backend anchor every 30 seconds
       const mainTicker = setInterval(() => { fetchBullionData(); }, 30000);
       return () => clearInterval(mainTicker);
   }, []);
 
-  // 2. The 1-Second Micro-Volatility Simulator!
   useEffect(() => {
       if (!anchorMarkets) return;
-
       const microTicker = setInterval(() => {
           const fluctuatedMarkets = {};
-          
           Object.keys(anchorMarkets).forEach(city => {
               fluctuatedMarkets[city] = {};
-              
               Object.keys(anchorMarkets[city]).forEach(metal => {
                   const truePrice = parseFloat(anchorMarkets[city][metal]);
-                  
-                  // Generate a random market fluctuation between -₹1.50 and +₹1.50
                   const volatility = (Math.random() * 3) - 1.5; 
-                  
                   fluctuatedMarkets[city][metal] = (truePrice + volatility).toFixed(2);
               });
           });
-
           setBullionMarkets(fluctuatedMarkets);
-          setLastTick(new Date()); // Update clock every second
-      }, 1000); // 1000ms = 1 Second!
+          setLastTick(new Date()); 
+      }, 1000); 
 
       return () => clearInterval(microTicker);
   }, [anchorMarkets]);
 
 
-  // Save Automation Settings
   const handleSaveConfig = async () => {
     const toastId = toast.loading('Updating background timer...');
     try {
@@ -91,26 +81,23 @@ const DailyRates = () => {
     } catch (err) { toast.error('Failed to save settings.', { id: toastId }); }
   };
 
-  // Immediate API Sync
   const handleSync = async () => {
     setSyncing(true);
     const toastId = toast.loading('Connecting to Global Markets...');
     try {
       await axios.post('http://localhost:5000/api/rates/sync', { premium });
       await fetchData(); 
-      toast.success('Rates synced successfully!', { id: toastId });
+      toast.success('Rates synced globally!', { id: toastId });
     } catch (err) { toast.error('Sync failed.', { id: toastId }); } 
     finally { setSyncing(false); }
   };
 
-  // Handle Manual Typing
   const handleRateChange = (index, newValue) => {
     const updatedRates = [...rates];
     updatedRates[index].rate_per_gram = newValue;
     setRates(updatedRates);
   };
 
-  // Save Manual Edits
   const handleManualSave = async () => {
     setSavingManual(true);
     const toastId = toast.loading('Locking in custom rates...');
@@ -125,16 +112,16 @@ const DailyRates = () => {
     finally { setSavingManual(false); }
   };
 
-  // One-Click copy from Regional Market to Storefront
-  const applyMarketRateToStore = (cityRates) => {
-      const updated = rates.map(sr => {
-          if (cityRates[sr.metal_type]) {
-              return { ...sr, rate_per_gram: cityRates[sr.metal_type] };
-          }
-          return sr;
-      });
-      setRates(updated);
-      toast.success("Market rates applied! Click 'Save Overrides' to publish.", { icon: '⚡' });
+  // 🌟 THE FIX: API call to use city logic
+  const applyMarketRateToStore = async (city) => {
+      const toastId = toast.loading(`Locking sync to ${city} market...`);
+      try {
+          await axios.post('http://localhost:5000/api/rates/use-city', { city });
+          await fetchData(); 
+          toast.success(`${city} rates applied & locked for auto-sync!`, { id: toastId, icon: '⚡' });
+      } catch (err) {
+          toast.error(`Failed to apply ${city} rates.`, { id: toastId });
+      }
   };
 
   const getTrendIcon = (current, previous) => {
@@ -169,13 +156,14 @@ const DailyRates = () => {
              <p className="text-xs text-gray-500 uppercase tracking-widest font-bold mb-1">Last Updated</p>
              <p className="text-sm font-mono text-green-400">{lastUpdated}</p>
              <p className="text-[10px] text-gray-400 mt-1">
-                Auto-Sync: {intervalHrs === 0 ? '⏸️ Paused' : `Every ${intervalHrs} hr(s)`}
+                {/* 🌟 NEW: Show Active Target */}
+                Auto-Sync: {intervalHrs === 0 ? '⏸️ Paused' : `Every ${intervalHrs} hr(s)`} • Target: <span className="text-gold">{activeCity}</span>
              </p>
           </div>
         </div>
       </div>
 
-      {/* LIVE REGIONAL BULLION ROW (1-SECOND TICKER) */}
+      {/* LIVE REGIONAL BULLION ROW */}
       <div className="mb-10">
          <div className="flex justify-between items-end mb-4">
             <h3 className="font-bold text-gray-800 flex items-center gap-2 text-lg">
@@ -189,19 +177,22 @@ const DailyRates = () => {
          </div>
 
          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {bullionMarkets && Object.entries(bullionMarkets).map(([city, marketRates]) => (
-                <div key={city} className="bg-white rounded-2xl p-6 shadow-md border border-gray-200 relative overflow-hidden group hover:border-gold transition-colors">
+            {bullionMarkets && Object.entries(bullionMarkets).map(([city, marketRates]) => {
+                const isCityActive = activeCity === city;
+                return (
+                <div key={city} className={`bg-white rounded-2xl p-6 shadow-md border relative overflow-hidden transition-all ${isCityActive ? 'border-gold shadow-[0_0_15px_rgba(212,175,55,0.2)]' : 'border-gray-200 hover:border-gray-300'}`}>
                     <div className="absolute top-0 right-0 p-4 opacity-5 text-gray-800"><MapPin size={80}/></div>
                     
                     <div className="relative z-10 flex justify-between items-center mb-6">
                         <h4 className="text-lg font-bold text-gray-900 tracking-wide uppercase flex items-center gap-2">
-                           <MapPin size={16} className="text-gold"/> {city}
+                            <MapPin size={16} className={isCityActive ? "text-gold" : "text-gray-400"}/> {city}
                         </h4>
                         <button 
-                            onClick={() => applyMarketRateToStore(marketRates)}
-                            className="bg-gray-100 hover:bg-gold hover:text-black text-gray-600 text-xs font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-sm"
+                            onClick={() => applyMarketRateToStore(city)}
+                            disabled={isCityActive}
+                            className={`${isCityActive ? 'bg-gold text-black shadow-inner' : 'bg-gray-100 hover:bg-gold hover:text-black text-gray-600 shadow-sm'} text-xs font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 disabled:cursor-not-allowed`}
                         >
-                            <Zap size={14}/> Use
+                            <Zap size={14}/> {isCityActive ? 'Active Sync' : 'Use'}
                         </button>
                     </div>
 
@@ -220,14 +211,11 @@ const DailyRates = () => {
                         </div>
                     </div>
                 </div>
-            ))}
+            )})}
          </div>
       </div>
 
-      {/* EXISTING AUTOMATION AND MANUAL CONFIG GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-         
-         {/* LEFT CONTROL PANEL (AUTOMATION SYNC) */}
          <div className="lg:col-span-1 space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                <h3 className="font-bold text-gray-900 border-b pb-3 mb-4 flex items-center gap-2">
@@ -288,7 +276,6 @@ const DailyRates = () => {
             </div>
          </div>
 
-         {/* RIGHT LIVE RATES BOARD (EDITABLE) */}
          <div className="lg:col-span-2">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
                
