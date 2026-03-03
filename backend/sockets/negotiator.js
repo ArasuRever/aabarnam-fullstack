@@ -38,9 +38,6 @@ module.exports = (io, pool) => {
                 const touchPct = parseFloat(product.purchase_touch_pct || 91.6) / 100;
                 const pureWeight = grossWeight * touchPct;
                 const wholesaleCost = (pureWeight * rate24k) + parseFloat(product.purchase_mc || 0);
-                
-                // Floor Price rounded to the nearest 50
-                const absoluteMinimum = Math.ceil((wholesaleCost * 1.03) / 50) * 50; 
 
                 const retailRateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [product.metal_type]);
                 const retailRate = retailRateRes.rows.length > 0 ? parseFloat(retailRateRes.rows[0].rate_per_gram) : 0;
@@ -62,9 +59,15 @@ module.exports = (io, pool) => {
                 // Listed Price rounded to the nearest 50
                 const listedPrice = Math.round((subtotal + gst) / 50) * 50;
 
+                // 🌟 THE FIX: Floor Price Safety bounds
+                let absoluteMinimum = Math.ceil((wholesaleCost * 1.03) / 50) * 50; 
+                // If the math anomaly causes absolute minimum to be higher than listed, force a standard 5% discount limit
+                if (absoluteMinimum >= listedPrice) {
+                    absoluteMinimum = listedPrice - (Math.round((listedPrice * 0.05) / 50) * 50);
+                }
+
                 sessionData = { productId: product_id, floorPrice: absoluteMinimum, listedPrice: listedPrice, baseMetalValue: retailMetalValue, actualMakingCharge: actualMakingCharge, isDealClosed: false };
 
-                // 🌟 REFINED AURA PROMPT: Stricter, profit-focused logic
                 const systemPrompt = `You are 'Aura of Aabarnam', the exclusive AI Concierge and strict negotiator for a premium Indian jewelry store.
 - Product: ${product.name}
 - Official Retail Price: ₹${listedPrice}
@@ -74,11 +77,12 @@ STRICT RULES:
 1. Your primary goal is to MAXIMIZE PROFIT. NEVER accept the user's first discount request, even if their offer is above your floor price. You must HAGGLE.
 2. Speak warmly, respectfully, and passionately about the craftsmanship. Use the term "Value Addition (VA)" instead of "Wastage".
 3. PRICE ROUNDING: EVERY single price you mention or offer MUST be a clean round number ending in 50 or 00 (e.g., ₹165,000, ₹167,500, ₹168,800).
-4. SMALL DISCOUNTS ONLY: When you counter-offer, only drop your *previous* offer by ₹500 to ₹1000 per turn. DO NOT drop by thousands of rupees at once, even if the user asks for a huge discount.
+4. SMALL DISCOUNTS ONLY: When you counter-offer, only drop your *previous* offer by ₹500 to ₹1000 per turn. DO NOT drop by thousands of rupees at once.
 5. If the user's bid is lower than your current intended counter-offer, REJECT their bid and state your counter-offer.
 6. ONLY ACCEPT an offer if the user agrees to a price you just proposed, or if you have already haggled back and forth multiple times and their offer is exceptionally fair.
 7. If they bid below ₹${absoluteMinimum}, act politely shocked and refuse. If you reach ₹${absoluteMinimum}, clearly state it is your absolute final rock-bottom price and you cannot go a single Rupee lower.
-8. You MUST use the update_live_price tool for every counter-offer. Set status to 'accepted' ONLY when you reach a mutual agreement.`;
+8. You MUST use the update_live_price tool for every counter-offer. Set status to 'accepted' ONLY when you reach a mutual agreement.
+9. CRITICAL MATH RULE: The 'final_rounded_price' integer you pass to the update_live_price tool MUST EXACTLY MATCH the price you state in your text message. Do not output a different number in the tool than what you speak.`;
 
                 let geminiHistory = [];
                 if (history && history.length > 0) {

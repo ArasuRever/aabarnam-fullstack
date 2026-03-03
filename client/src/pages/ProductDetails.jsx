@@ -21,8 +21,13 @@ const ProductDetails = () => {
   const [allImages, setAllImages] = useState([]);
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
   const [showFullscreen, setShowFullscreen] = useState(false);
-  const [isZooming, setIsZooming] = useState(false);
-  const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
+  
+  // 🌟 NEW: Click-to-Zoom & Drag-to-Pan States
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [panPos, setPanPos] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [clickTime, setClickTime] = useState(0);
 
   const [reviews, setReviews] = useState([]);
   const [reviewEligibility, setReviewEligibility] = useState({ canReview: false, hasPurchased: false, hasReviewed: false });
@@ -56,11 +61,15 @@ const ProductDetails = () => {
   const CHAT_STORAGE_KEY = `aabarnam_chat_${id}`;
   const [isChatFrozen, setIsChatFrozen] = useState(false);
 
+  // 🌟 UPDATED: Close fullscreen cleanly and reset zoom
   useEffect(() => {
     if (sizer.show || showFullscreen || showBreakdown || showChat) {
         document.body.style.overflow = 'hidden';
     } else {
         document.body.style.overflow = 'unset';
+        // Reset zoom states if fullscreen closes
+        setIsZoomed(false);
+        setPanPos({ x: 0, y: 0 });
     }
     return () => { document.body.style.overflow = 'unset'; }
   }, [sizer.show, showFullscreen, showBreakdown, showChat]);
@@ -107,15 +116,15 @@ const ProductDetails = () => {
         const images = [prodRes.data.main_image_url, ...(prodRes.data.gallery_images?.map(img => img.url) || [])].filter(Boolean);
         setAllImages(images);
 
-        if (prodRes.data.price_breakdown && !liveBreakdown) {
-            setLiveBreakdown({
+        setLiveBreakdown(prev => {
+            if (prev && prev.original_listed_price) return prev; 
+            return {
                 ...prodRes.data.price_breakdown,
                 wastage_pct: prodRes.data.price_breakdown.wastage_pct !== undefined ? prodRes.data.price_breakdown.wastage_pct : prodRes.data.wastage_pct,
                 final_total_price: Math.round(prodRes.data.price_breakdown.final_total_price),
-                // 🌟 THE FIX: Lock the original price down so admin updates don't break the UI math
-                original_listed_price: Math.round(prodRes.data.price_breakdown.final_total_price) 
-            });
-        }
+                original_listed_price: Math.round(prodRes.data.price_breakdown.final_total_price)
+            };
+        });
 
         const reviewsRes = await axios.get(`http://localhost:5000/api/products/${id}/reviews`);
         setReviews(reviewsRes.data);
@@ -163,7 +172,7 @@ const ProductDetails = () => {
               making_charge: data.newBreakdown.making_charge !== undefined ? data.newBreakdown.making_charge : prev.making_charge,
               wastage_value: data.newBreakdown.wastage_value !== undefined ? data.newBreakdown.wastage_value : prev.wastage_value,
               final_total_price: data.newBreakdown.final_total_price,
-              original_listed_price: prev.original_listed_price || Math.round(product.price_breakdown.final_total_price),
+              original_listed_price: data.newBreakdown.original_listed_price || prev?.original_listed_price, 
               deal_token: data.deal_token || prev?.deal_token
           }));
           resetHesitationTimer();
@@ -226,7 +235,7 @@ const ProductDetails = () => {
 
   const handleAddToCart = () => {
     const finalPrice = liveBreakdown?.final_total_price || product.price_breakdown?.final_total_price;
-    const originalPrice = product.price_breakdown?.final_total_price;
+    const originalPrice = liveBreakdown?.original_listed_price || Math.round(product.price_breakdown?.final_total_price);
     const discount = originalPrice - finalPrice;
     
     const productToCart = { 
@@ -244,7 +253,7 @@ const ProductDetails = () => {
     toast.success(
         (t) => (
             <div>
-                <span className="font-bold text-gray-900">Added {product.name} at ₹{finalPrice}! 🛍️</span>
+                <span className="font-bold text-gray-900">Added {product.name} at ₹{finalPrice.toLocaleString('en-IN')}! 🛍️</span>
                 <p className="text-sm mt-1.5 text-gray-700 leading-snug">Your negotiated price is locked for <span className="font-extrabold text-red-600">30 minutes</span>.</p>
             </div>
         ), 
@@ -291,17 +300,17 @@ const ProductDetails = () => {
       } finally { setSubmittingReview(false); }
   };
 
-  const nextImg = (e) => { e?.stopPropagation(); setCurrentImgIndex((prev) => (prev + 1) % allImages.length); };
-  const prevImg = (e) => { e?.stopPropagation(); setCurrentImgIndex((prev) => (prev - 1 + allImages.length) % allImages.length); };
-  
-  const handleMouseMove = (e) => {
-    if (!showFullscreen) return;
-    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - left) / width) * 100;
-    const y = ((e.clientY - top) / height) * 100;
-    setZoomPos({ x, y });
+  const nextImg = (e) => { 
+      e?.stopPropagation(); 
+      setCurrentImgIndex((prev) => (prev + 1) % allImages.length); 
+      setIsZoomed(false); setPanPos({ x: 0, y: 0 }); // Reset zoom on next
   };
-
+  const prevImg = (e) => { 
+      e?.stopPropagation(); 
+      setCurrentImgIndex((prev) => (prev - 1 + allImages.length) % allImages.length); 
+      setIsZoomed(false); setPanPos({ x: 0, y: 0 }); // Reset zoom on prev
+  };
+  
   const pxPerMm = sizer.cardPx / 85.6; 
   const currentMm = sizer.circlePx / pxPerMm;
   const currentCircumference = currentMm * Math.PI;
@@ -317,6 +326,7 @@ const ProductDetails = () => {
   const dynamicSubtotal = parseFloat(displayPrice) / 1.03;
   const dynamicGst = parseFloat(displayPrice) - dynamicSubtotal;
   const avgRating = reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) : 0;
+  const baseComparePrice = liveBreakdown?.original_listed_price || Math.round(product.price_breakdown?.final_total_price);
 
   return (
     <div className="bg-[#faf9f6] min-h-screen pt-10 pb-20 animate-fade-in relative font-sans">
@@ -325,71 +335,49 @@ const ProductDetails = () => {
       {sizer.show && (
           <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl animate-fade-in-up flex flex-col max-h-[90vh] overflow-hidden">
-                  
                   <div className="bg-gradient-to-r from-gray-900 to-black p-4 flex justify-between items-center text-white border-b border-gold/30 shrink-0">
                       <h3 className="font-serif font-bold text-lg text-gold flex items-center gap-2">
                           <Scan size={20} /> Aabarnam Digital Sizer
                       </h3>
                       <button onClick={() => setSizer({...sizer, show: false})} className="text-gray-400 hover:text-white transition"><X size={20}/></button>
                   </div>
-
                   <div className="overflow-y-auto p-6 md:p-8 flex flex-col items-center text-center custom-scrollbar">
                       {sizer.step === 1 && (
                           <div className="w-full max-w-lg mx-auto">
                               <h4 className="font-bold text-gray-900 mb-2 text-xl">Step 1: Calibrate Screen</h4>
                               <p className="text-sm text-gray-500 mb-8">Place a standard Debit/Credit Card flat against your screen. Adjust the slider until the blue box exactly matches your physical card.</p>
-                              
                               <div className="w-full h-[350px] bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center mb-8 shadow-inner overflow-hidden relative">
-                                  <div 
-                                    style={{ width: `${sizer.cardPx}px`, height: `${sizer.cardPx * (53.98 / 85.6)}px` }} 
-                                    className="bg-blue-600 rounded-xl shadow-lg border-2 border-white/50 flex flex-col justify-between p-4 transition-all duration-75"
-                                  >
-                                      <div className="flex justify-between items-center opacity-30">
-                                          <div className="w-12 h-8 bg-yellow-400 rounded-md"></div>
-                                          <CreditCardIcon className="text-white" size={32} />
-                                      </div>
+                                  <div style={{ width: `${sizer.cardPx}px`, height: `${sizer.cardPx * (53.98 / 85.6)}px` }} className="bg-blue-600 rounded-xl shadow-lg border-2 border-white/50 flex flex-col justify-between p-4 transition-all duration-75">
+                                      <div className="flex justify-between items-center opacity-30"><div className="w-12 h-8 bg-yellow-400 rounded-md"></div><CreditCardIcon className="text-white" size={32} /></div>
                                       <div className="w-3/4 h-3 bg-white/30 rounded mt-auto"></div>
                                   </div>
                               </div>
-
                               <input type="range" min="150" max="600" value={sizer.cardPx} onChange={(e) => setSizer({...sizer, cardPx: Number(e.target.value)})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black mb-6" />
                               <button onClick={() => setSizer({...sizer, step: 2})} className="w-full bg-black text-gold py-4 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg">Confirm Calibration</button>
                           </div>
                       )}
-
                       {sizer.step === 2 && (
                           <div className="w-full max-w-lg mx-auto">
                               <h4 className="font-bold text-gray-900 mb-2 text-xl">Step 2: Find Your Size</h4>
-                              
                               <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded-lg mb-6 text-sm flex items-start gap-2 text-left shadow-sm">
                                  <Info className="flex-shrink-0 mt-0.5 text-orange-600" size={18} />
                                  <p><strong>Crucial:</strong> Place your existing jewelry on the screen. The dotted circle must touch the <b>INSIDE EDGE</b> of your ring/bangle. Do not measure the outside thickness!</p>
                               </div>
-                              
                               <div className="flex gap-2 bg-gray-100 p-1 rounded-lg mb-6 justify-center w-fit mx-auto">
                                   <button onClick={() => setSizer({...sizer, type: 'ring', circlePx: 120})} className={`px-6 py-2 rounded-md text-sm font-bold transition ${sizer.type === 'ring' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-black'}`}>💍 Ring</button>
                                   <button onClick={() => setSizer({...sizer, type: 'bangle', circlePx: 250})} className={`px-6 py-2 rounded-md text-sm font-bold transition ${sizer.type === 'bangle' ? 'bg-white shadow text-black' : 'text-gray-500 hover:text-black'}`}>⭕ Bangle</button>
                               </div>
-
                               <div className="w-full h-[350px] bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center mb-6 shadow-inner relative overflow-hidden">
-                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
-                                      <div className="w-px h-full bg-black"></div><div className="w-full h-px bg-black absolute"></div>
-                                  </div>
-                                  <div 
-                                    style={{ width: `${sizer.circlePx}px`, height: `${sizer.circlePx}px` }} 
-                                    className="rounded-full border-[3px] border-dashed border-gold flex items-center justify-center bg-gold/10 transition-all duration-75 relative"
-                                  >
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10"><div className="w-px h-full bg-black"></div><div className="w-full h-px bg-black absolute"></div></div>
+                                  <div style={{ width: `${sizer.circlePx}px`, height: `${sizer.circlePx}px` }} className="rounded-full border-[3px] border-dashed border-gold flex items-center justify-center bg-gold/10 transition-all duration-75 relative">
                                       <span className="text-[10px] text-gold-dark font-bold font-mono bg-white/90 px-2 py-0.5 rounded shadow-sm border border-gold/20">{currentMm.toFixed(1)} mm</span>
                                   </div>
                               </div>
-
                               <input type="range" min="30" max="400" value={sizer.circlePx} onChange={(e) => setSizer({...sizer, circlePx: Number(e.target.value)})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black mb-6" />
-                              
                               <div className="bg-green-50 w-full p-4 rounded-xl border border-green-200 mb-6 shadow-inner">
                                   <p className="text-xs text-green-800 uppercase tracking-widest font-bold">Estimated Standard Size</p>
                                   <p className="text-3xl font-serif text-green-900 mt-1">{sizer.type === 'ring' ? `Size ${calculatedRingSize}` : `Size ${calculatedBangleSize}`}</p>
                               </div>
-
                               <div className="flex gap-3 w-full pb-4">
                                   <button onClick={() => setSizer({...sizer, step: 1})} className="flex-1 bg-gray-100 text-gray-800 py-3 rounded-xl font-bold hover:bg-gray-200 transition">Back</button>
                                   <button onClick={() => setSizer({...sizer, show: false})} className="flex-[2] bg-black text-gold py-3 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg">Done</button>
@@ -401,26 +389,57 @@ const ProductDetails = () => {
           </div>
       )}
 
-
+      {/* 🌟 ENHANCED FULLSCREEN VIEWER (Click to Zoom & Drag to Pan) */}
       {showFullscreen && (
-        <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center backdrop-blur-md transition-opacity duration-300">
-           <button onClick={() => setShowFullscreen(false)} className="absolute top-8 right-8 text-white hover:text-gold transition bg-white/10 p-3 rounded-full z-50"><X size={28} /></button>
-           {allImages.length > 1 && (
+        <div className="fixed inset-0 z-[300] bg-black/95 flex items-center justify-center backdrop-blur-md transition-opacity duration-300 overflow-hidden">
+           
+           <button 
+               onClick={(e) => { e.stopPropagation(); setShowFullscreen(false); setIsZoomed(false); setPanPos({x:0, y:0}); }} 
+               className="absolute top-6 right-6 text-white hover:text-gold transition bg-white/10 p-3 rounded-full z-[400] shadow-lg hover:bg-white/20"
+           >
+               <X size={28} />
+           </button>
+
+           {allImages.length > 1 && !isZoomed && (
              <>
-                <button onClick={prevImg} className="absolute left-8 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-4 z-50"><ChevronLeft size={48}/></button>
-                <button onClick={nextImg} className="absolute right-8 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-4 z-50"><ChevronRight size={48}/></button>
+                <button onClick={prevImg} className="absolute left-6 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-4 z-[400] bg-black/20 rounded-full hover:bg-black/50 transition"><ChevronLeft size={48}/></button>
+                <button onClick={nextImg} className="absolute right-6 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-4 z-[400] bg-black/20 rounded-full hover:bg-black/50 transition"><ChevronRight size={48}/></button>
              </>
            )}
+
            <div 
-              className="relative w-[80vw] h-[80vh] cursor-crosshair overflow-hidden flex items-center justify-center"
-              onMouseEnter={() => setIsZooming(true)}
-              onMouseLeave={() => setIsZooming(false)}
-              onMouseMove={handleMouseMove}
+              className={`relative w-full h-full flex items-center justify-center overflow-hidden touch-none ${isZoomed ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'}`}
+              onPointerDown={(e) => {
+                  setClickTime(Date.now());
+                  if (isZoomed) {
+                      setIsDragging(true);
+                      setDragStart({ x: e.clientX - panPos.x, y: e.clientY - panPos.y });
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                  }
+              }}
+              onPointerMove={(e) => {
+                  if (isDragging && isZoomed) {
+                      setPanPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+                  }
+              }}
+              onPointerUp={(e) => {
+                  if (isDragging) {
+                      setIsDragging(false);
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                  if (Date.now() - clickTime < 200) { 
+                      setIsZoomed(!isZoomed);
+                      if (isZoomed) setPanPos({ x: 0, y: 0 }); 
+                  }
+              }}
            >
                <img 
                  src={allImages[currentImgIndex]} 
-                 style={isZooming ? { transform: `scale(2.5)`, transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : {}}
-                 className="max-w-full max-h-full object-contain transition-transform duration-150 ease-out pointer-events-none" 
+                 style={{
+                     transform: isZoomed ? `translate(${panPos.x}px, ${panPos.y}px) scale(2.2)` : `translate(0px, 0px) scale(1)`,
+                     transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)'
+                 }}
+                 className="max-w-[90vw] max-h-[90vh] object-contain pointer-events-none select-none" 
                  alt="Fullscreen View" 
                />
            </div>
@@ -471,7 +490,6 @@ const ProductDetails = () => {
       {/* Main UI starts here */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-          
           <div className="space-y-6">
             <div className="relative w-full aspect-square bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 group cursor-pointer" onClick={() => setShowFullscreen(true)}>
               <img src={allImages[currentImgIndex]} alt={product.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
@@ -521,8 +539,8 @@ const ProductDetails = () => {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8 relative">
               <div className="flex items-end gap-4 mb-2">
                 <span className="text-5xl font-bold text-gray-900 tracking-tight transition-all duration-700">₹{displayPrice}</span>
-                {liveBreakdown?.final_total_price < Math.round(product.price_breakdown?.final_total_price) && (
-                    <span className="text-xl text-gray-400 line-through font-medium">₹{Math.round(product.price_breakdown.final_total_price)}</span>
+                {liveBreakdown?.final_total_price < baseComparePrice && (
+                    <span className="text-xl text-gray-400 line-through font-medium">₹{baseComparePrice}</span>
                 )}
               </div>
               
@@ -530,8 +548,7 @@ const ProductDetails = () => {
                 <div className="mt-4 bg-green-50 border border-green-200 p-4 rounded-xl animate-fade-in">
                     <h4 className="font-bold text-green-800 flex items-center gap-2">🎉 Deal Struck!</h4>
                     <p className="text-green-700 text-sm mt-1">
-                        {/* 🌟 THE FIX: Using original_listed_price here */}
-                        You successfully negotiated <b>₹{Math.round((liveBreakdown.original_listed_price || product.price_breakdown.final_total_price) - liveBreakdown.final_total_price)}</b> off the original price!
+                        You successfully negotiated <b>₹{(baseComparePrice - liveBreakdown.final_total_price).toLocaleString('en-IN')}</b> off the original price!
                     </p>
                 </div>
               ) : (
