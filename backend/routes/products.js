@@ -170,10 +170,32 @@ router.put('/:id', verifyAdmin, upload.fields([{ name: 'thumbnail', maxCount: 1 
 
 // 🛡️ SECURED: DELETE PRODUCT
 router.delete('/:id', verifyAdmin, async (req, res) => {
+    const client = await pool.connect();
     try {
-        await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
-        res.json({ message: "Deleted" });
-    } catch (err) { res.status(500).json({ error: 'Delete error' }); }
+        await client.query('BEGIN');
+        
+        // 1. Delete associated images first to satisfy Foreign Key constraints
+        await client.query('DELETE FROM product_images WHERE product_id = $1', [req.params.id]);
+        
+        // 2. Delete the actual product
+        await client.query('DELETE FROM products WHERE id = $1', [req.params.id]);
+        
+        await client.query('COMMIT');
+        res.json({ message: "Deleted successfully" });
+    } catch (err) { 
+        await client.query('ROLLBACK');
+        console.error("🚨 Delete Product Error:", err.message); // <-- This restores your terminal logs!
+        
+        // Error 23503 is PostgreSQL's code for a Foreign Key Violation
+        if (err.code === '23503') {
+            return res.status(400).json({ 
+                error: "Cannot delete this product because it is linked to customer orders. Please edit the product and set its stock to 0 instead." 
+            });
+        }
+        res.status(500).json({ error: 'Server error while deleting product.' }); 
+    } finally {
+        client.release();
+    }
 });
 
 // PUBLIC: GET PRODUCT DETAILS (Used on the store)

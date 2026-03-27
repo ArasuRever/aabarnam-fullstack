@@ -25,7 +25,11 @@ const Products = () => {
 
   const fetchProducts = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/products');
+      // Pass the token just in case verifyAdmin is strictly enforcing it on GET requests
+      const token = localStorage.getItem('adminToken') || localStorage.getItem('token');
+      const response = await axios.get('http://localhost:5000/api/products', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       setProducts(response.data);
       setFilteredProducts(response.data);
       setLoading(false);
@@ -44,12 +48,20 @@ const Products = () => {
     setFilteredProducts(results);
   }, [searchTerm, typeFilter, products]);
 
+  // 🌟 UPDATED: Error catching to show exact DB reasons
   const handleDelete = async (id, name) => {
     if (window.confirm(`Delete "${name}" permanently?`)) {
       try {
-        await axios.delete(`http://localhost:5000/api/products/${id}`);
+        const token = localStorage.getItem('adminToken') || localStorage.getItem('token');
+        await axios.delete(`http://localhost:5000/api/products/${id}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        alert('Product deleted successfully.');
         fetchProducts(); 
-      } catch (error) { alert('Failed to delete.'); }
+      } catch (error) { 
+        // This will now show the 23503 Foreign Key error gracefully
+        alert(error.response?.data?.error || 'Failed to delete product.'); 
+      }
     }
   };
   
@@ -110,6 +122,9 @@ const Products = () => {
     formData.append('stone_weight', editingProduct.stone_weight || 0);
     formData.append('net_weight', editingProduct.net_weight);
     
+    // 🌟 ADDED STOCK TO EDIT MODAL
+    formData.append('stock_quantity', editingProduct.stock_quantity);
+    
     // Inward Logic
     formData.append('purchase_touch_pct', editingProduct.purchase_touch_pct || 91.6);
     formData.append('purchase_mc_type', editingProduct.purchase_mc_type || 'PER_GRAM');
@@ -126,8 +141,12 @@ const Products = () => {
     formData.append('deleted_gallery_ids', JSON.stringify(deletedGalleryIds));
 
     try {
+        const token = localStorage.getItem('adminToken') || localStorage.getItem('token');
         await axios.put(`http://localhost:5000/api/products/${editingProduct.id}`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
+            headers: { 
+                'Content-Type': 'multipart/form-data',
+                Authorization: token ? `Bearer ${token}` : ''
+            }
         });
         alert("Product Updated Successfully! ✅");
         setIsEditModalOpen(false);
@@ -172,13 +191,30 @@ const Products = () => {
             {filteredProducts.map((product) => (
               <div key={product.id} className="group bg-white rounded-xl shadow-sm hover:shadow-xl transition-all border overflow-hidden relative">
                 <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
-                    <img src={product.main_image_url || 'https://via.placeholder.com/300'} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-gold px-3 py-1 rounded-full text-xs font-bold shadow-sm">₹{product.price_breakdown?.final_total_price}</div>
-                    <div className="absolute top-2 left-2 bg-white/90 text-gray-800 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide">{product.item_type || 'JEWELRY'}</div>
+                    <img src={product.main_image_url || 'https://via.placeholder.com/300'} alt={product.name} className={`w-full h-full object-cover transition-transform duration-500 ${product.stock_quantity <= 0 ? 'grayscale opacity-50' : 'group-hover:scale-105'}`} />
+                    
+                    {/* 🌟 NEW: SOLD OUT BADGE */}
+                    {product.stock_quantity <= 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                            <span className="bg-red-600 text-white px-4 py-1.5 font-bold tracking-widest uppercase rounded shadow-lg transform -rotate-12 border border-white">Sold Out</span>
+                        </div>
+                    )}
+
+                    <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-gold px-3 py-1 rounded-full text-xs font-bold shadow-sm z-20">₹{product.price_breakdown?.final_total_price}</div>
+                    <div className="absolute top-2 left-2 bg-white/90 text-gray-800 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide z-20">{product.item_type || 'JEWELRY'}</div>
                 </div>
                 <div className="p-4">
-                    <h3 className="font-bold text-gray-800 truncate">{product.name}</h3>
-                    <p className="text-xs text-gray-500 font-mono mb-2">{product.sku}</p>
+                    <div className="flex justify-between items-start">
+                        <div className="overflow-hidden">
+                            <h3 className="font-bold text-gray-800 truncate">{product.name}</h3>
+                            <p className="text-xs text-gray-500 font-mono mb-2">{product.sku}</p>
+                        </div>
+                        {/* 🌟 NEW: STOCK COUNTER */}
+                        <div className={`flex flex-col items-end text-xs font-bold ${product.stock_quantity > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            <span>Stock</span>
+                            <span className="text-sm">{product.stock_quantity}</span>
+                        </div>
+                    </div>
                     <div className="flex gap-2 pt-2 border-t border-dashed border-gray-200">
                         <button onClick={() => openEditModal(product)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 text-xs font-bold rounded hover:bg-blue-100 transition">Edit</button>
                         <button onClick={() => handleDelete(product.id, product.name)} className="flex-1 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded hover:bg-red-100 transition">Remove</button>
@@ -197,7 +233,7 @@ const Products = () => {
                 <th className="p-4 font-semibold text-gray-700">Image</th>
                 <th className="p-4 font-semibold text-gray-700">Type</th>
                 <th className="p-4 font-semibold text-gray-700">SKU / Name</th>
-                <th className="p-4 font-semibold text-gray-700">Metal</th>
+                <th className="p-4 font-semibold text-gray-700 text-center">Stock</th>
                 <th className="p-4 font-semibold text-gray-700">Price</th>
                 <th className="p-4 font-semibold text-gray-700 text-center">Actions</th>
                 </tr>
@@ -205,11 +241,18 @@ const Products = () => {
             <tbody>
                 {filteredProducts.map((product) => (
                 <tr key={product.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="p-4"><img src={product.main_image_url} alt={product.name} className="w-12 h-12 rounded object-cover border" /></td>
+                    <td className="p-4 relative">
+                        <img src={product.main_image_url} alt={product.name} className={`w-12 h-12 rounded object-cover border ${product.stock_quantity <= 0 ? 'grayscale opacity-50' : ''}`} />
+                    </td>
                     <td className="p-4"><span className="px-2 py-1 bg-gray-100 text-xs font-bold rounded uppercase text-gray-600">{product.item_type || 'General'}</span></td>
                     <td className="p-4"><p className="font-bold text-gray-800">{product.sku}</p><p className="text-sm text-gray-500">{product.name}</p></td>
-                    <td className="p-4 text-sm font-medium">{product.metal_type.replace('_', ' ')}</td>
-                    <td className="p-4 font-bold text-green-600">₹{product.price_breakdown?.final_total_price}</td>
+                    {/* 🌟 NEW: LIST VIEW STOCK INDICATOR */}
+                    <td className="p-4 text-center">
+                        <span className={`px-2.5 py-1 rounded text-xs font-bold ${product.stock_quantity > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {product.stock_quantity > 0 ? product.stock_quantity : 'SOLD OUT'}
+                        </span>
+                    </td>
+                    <td className="p-4 font-bold text-gray-800">₹{product.price_breakdown?.final_total_price}</td>
                     <td className="p-4 text-center space-x-2">
                         <button onClick={() => openEditModal(product)} className="px-3 py-1 bg-blue-100 text-blue-600 rounded text-xs font-bold hover:bg-blue-200">Edit</button>
                         <button onClick={() => handleDelete(product.id, product.name)} className="px-3 py-1 bg-red-100 text-red-600 rounded text-xs font-bold hover:bg-red-200">Delete</button>
@@ -233,7 +276,7 @@ const Products = () => {
             {editLoading ? <div className="p-12 text-center font-bold text-gray-500">Loading full ledger...</div> : (
                 <form onSubmit={saveEdit} className="p-6 space-y-6">
                     
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-4 gap-4">
                         <div className="col-span-2">
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
                             <input className="w-full p-2 border rounded font-bold" value={editingProduct.name} onChange={(e) => setEditingProduct({...editingProduct, name: e.target.value})} />
@@ -243,6 +286,11 @@ const Products = () => {
                             <select className="w-full p-2 border rounded bg-white" value={editingProduct.item_type} onChange={(e) => setEditingProduct({...editingProduct, item_type: e.target.value})}>
                                 {['RING', 'CHAIN', 'NECKLACE', 'BANGLES', 'EARRINGS', 'BRACELET', 'HARAM', 'PENDANT'].map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
+                        </div>
+                        {/* 🌟 NEW: EDIT STOCK CAPABILITY */}
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Stock Qty</label>
+                            <input type="number" min="0" className={`w-full p-2 border rounded font-bold ${editingProduct.stock_quantity <= 0 ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'}`} value={editingProduct.stock_quantity} onChange={(e) => setEditingProduct({...editingProduct, stock_quantity: e.target.value})} />
                         </div>
                     </div>
 

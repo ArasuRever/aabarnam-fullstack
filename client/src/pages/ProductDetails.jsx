@@ -164,17 +164,24 @@ const ProductDetails = () => {
           if (data.status === 'accepted') {
               setDealStatus('accepted');
               toast.success("Deal Accepted! Price locked in.", { icon: '🤝' });
+          } else if (data.status === 'rejected') {
+              // 🌟 NEW: Handle the rejection gracefully without crashing!
+              setDealStatus('rejected');
+              toast.error("Aura has ended the negotiation.", { icon: '🛑' });
+              return; // Stop here! Do not try to read newBreakdown.
           }
           
-          setLiveBreakdown(prev => ({
-              ...prev,
-              wastage_pct: data.newBreakdown.wastage_pct !== undefined ? data.newBreakdown.wastage_pct : prev.wastage_pct,
-              making_charge: data.newBreakdown.making_charge !== undefined ? data.newBreakdown.making_charge : prev.making_charge,
-              wastage_value: data.newBreakdown.wastage_value !== undefined ? data.newBreakdown.wastage_value : prev.wastage_value,
-              final_total_price: data.newBreakdown.final_total_price,
-              original_listed_price: data.newBreakdown.original_listed_price || prev?.original_listed_price, 
-              deal_token: data.deal_token || prev?.deal_token
-          }));
+          if (data.newBreakdown) {
+              setLiveBreakdown(prev => ({
+                  ...prev,
+                  wastage_pct: data.newBreakdown.wastage_pct !== undefined ? data.newBreakdown.wastage_pct : prev.wastage_pct,
+                  making_charge: data.newBreakdown.making_charge !== undefined ? data.newBreakdown.making_charge : prev.making_charge,
+                  wastage_value: data.newBreakdown.wastage_value !== undefined ? data.newBreakdown.wastage_value : prev.wastage_value,
+                  final_total_price: data.newBreakdown.final_total_price,
+                  original_listed_price: data.newBreakdown.original_listed_price || prev?.original_listed_price, 
+                  deal_token: data.deal_token || prev?.deal_token
+              }));
+          }
           resetHesitationTimer();
       });
     }
@@ -722,13 +729,34 @@ const ProductDetails = () => {
                             Start New Negotiation
                         </button>
                     </div>
+                ) : dealStatus === 'rejected' ? (
+                    <div className="text-center pb-2">
+                        <p className="text-xs text-red-600 font-bold mb-3">Negotiation closed by Aura.</p>
+                        <button onClick={handleRestartChat} className="w-full bg-gray-100 text-gray-800 py-3 rounded-xl text-sm font-bold shadow-sm hover:bg-gray-200 transition border border-gray-300">
+                            Clear Chat & Try Again
+                        </button>
+                    </div>
                 ) : (
                     <div className="flex gap-2 items-center">
                         <div className="relative flex-1">
                             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm z-10 pointer-events-none">₹</span>
-                            <input type="text" value={userBid} onChange={(e) => { setUserBid(e.target.value); resetHesitationTimer(); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} placeholder={dealStatus === 'accepted' ? "Deal Locked!" : (isTyping || onCooldown) ? "Aura is replying..." : "Your counter-offer..."} disabled={dealStatus === 'accepted' || isTyping || onCooldown} className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" />
+                            <input 
+                                type="text" 
+                                value={userBid} 
+                                onChange={(e) => { setUserBid(e.target.value); resetHesitationTimer(); }} 
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} 
+                                placeholder={dealStatus === 'accepted' ? "Deal Locked!" : (isTyping || onCooldown) ? "Aura is replying..." : "Your counter-offer..."} 
+                                disabled={dealStatus === 'accepted' || isTyping || onCooldown} 
+                                className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-gold transition shadow-inner bg-gray-50 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed" 
+                            />
                         </div>
-                        <button onClick={handleSendMessage} disabled={isTyping || onCooldown || !userBid.trim() || dealStatus === 'accepted'} className={`p-3 rounded-xl transition shadow-md flex items-center justify-center ${(!userBid.trim() || dealStatus === 'accepted' || isTyping || onCooldown) ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-black text-gold hover:bg-gray-800 hover:-translate-y-0.5'}`}><Send size={20} /></button>
+                        <button 
+                            onClick={handleSendMessage} 
+                            disabled={isTyping || onCooldown || !userBid.trim() || dealStatus === 'accepted'} 
+                            className={`p-3 rounded-xl transition shadow-md flex items-center justify-center ${(!userBid.trim() || dealStatus === 'accepted' || isTyping || onCooldown) ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-black text-gold hover:bg-gray-800 hover:-translate-y-0.5'}`}
+                        >
+                            <Send size={20} />
+                        </button>
                     </div>
                 )}
             </div>
