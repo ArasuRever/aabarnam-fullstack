@@ -1,10 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Shield, X, RefreshCw } from 'lucide-react';
 
-const OTPModal = ({ isOpen, onClose, targetValue, onVerify }) => {
+// 🌟 ADDED onResend prop
+const OTPModal = ({ isOpen, onClose, targetValue, onVerify, onResend }) => {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(30);
   const inputRefs = useRef([]);
+
+  // 🌟 FIX: Reset OTP inputs and timer every time the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setOtp(['', '', '', '', '', '']);
+      setTimer(30);
+      // Auto-focus first input
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && timer > 0) {
@@ -31,10 +42,17 @@ const OTPModal = ({ isOpen, onClose, targetValue, onVerify }) => {
     }
   };
 
+  const handleResend = () => {
+    setTimer(30);
+    setOtp(['', '', '', '', '', '']);
+    inputRefs.current[0]?.focus();
+    if (onResend) onResend(); // 🌟 Trigger backend to send a new code
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative border border-gray-100">
         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-black transition">
             <X size={20} />
@@ -68,7 +86,8 @@ const OTPModal = ({ isOpen, onClose, targetValue, onVerify }) => {
 
           <button 
             onClick={() => onVerify(otp.join(''))}
-            className="w-full bg-black text-white font-bold py-4 rounded-xl hover:bg-gray-800 transition-all mb-4"
+            disabled={otp.join('').length !== 6}
+            className="w-full bg-black text-white font-bold py-4 rounded-xl hover:bg-gray-800 transition-all mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Verify & Proceed
           </button>
@@ -77,7 +96,7 @@ const OTPModal = ({ isOpen, onClose, targetValue, onVerify }) => {
             {timer > 0 ? (
               <p className="text-gray-400">Resend code in <span className="text-gray-900 font-bold">{timer}s</span></p>
             ) : (
-              <button onClick={() => setTimer(30)} className="text-gold font-bold flex items-center gap-1 hover:underline">
+              <button onClick={handleResend} className="text-gold font-bold flex items-center gap-1 hover:underline">
                 <RefreshCw size={14} /> Resend OTP
               </button>
             )}

@@ -41,6 +41,7 @@ const Account = () => {
   const [cancelModal, setCancelModal] = useState({ show: false, order: null });
   const [editAddressModal, setEditAddressModal] = useState({ show: false, order: null, form: { address: '', city: '', pincode: '', phone_number: '' } });
   const [editGiftModal, setEditGiftModal] = useState({ show: false, order: null, form: { gift_sender: '', gift_message: '', gift_occasion: '', gift_effect: '' } });
+  const [editContactModal, setEditContactModal] = useState({ show: false, type: '', value: '' });
 
   const [sizer, setSizer] = useState({ show: false, step: 1, type: 'ring', cardPx: 280, circlePx: 120 });
 
@@ -128,18 +129,37 @@ const Account = () => {
   };
   const handleDeleteRelation = async (id) => { if(window.confirm("Remove this person?")) { try { await axios.delete(`http://localhost:5000/api/users/relations/${id}`); fetchData(); } catch (err) {} } };
 
-  const triggerOTP = async (target) => {
-    setOtpTarget(target);
+  // 🌟 UPDATED: Triggers OTP to the NEW target
+  const triggerOTP = async (newTarget) => {
+    if (!newTarget.trim()) return toast.error("Please enter a valid value.");
+    setOtpTarget(newTarget);
     try {
-      await axios.post('http://localhost:5000/api/otp/send', { userId: user.id, target });
-      setShowOTP(true); toast.success("Security code sent!");
+      await axios.post('http://localhost:5000/api/otp/send', { userId: user.id, target: newTarget });
+      setEditContactModal({ show: false, type: '', value: '' }); // Close input modal
+      setShowOTP(true); // Open OTP verification modal
+      toast.success(`Security code sent to ${newTarget}!`);
     } catch (err) { toast.error("Failed to send code"); }
   };
+
+  // 🌟 FIXED: Passed the `target` so backend accepts it, and force a page reload on success
   const handleVerifyOTP = async (code) => {
     try {
-      const res = await axios.post('http://localhost:5000/api/otp/verify', { userId: user.id, otpCode: code });
-      if (res.data.success) { setShowOTP(false); toast.success("Verified!"); }
-    } catch (err) { toast.error("Invalid Code."); }
+      const res = await axios.post('http://localhost:5000/api/otp/verify', { 
+          userId: user.id, 
+          otpCode: code, 
+          target: otpTarget // THE FIX!
+      });
+      
+      if (res.data.success) { 
+          setShowOTP(false); 
+          toast.success("Profile updated successfully!"); 
+          
+          // Reload the page so the AuthContext re-fetches the updated user data
+          setTimeout(() => window.location.reload(), 1500);
+      }
+    } catch (err) { 
+        toast.error(err.response?.data?.error || "Invalid Code."); 
+    }
   };
 
   const handleCancelOrder = async () => {
@@ -261,6 +281,40 @@ const Account = () => {
   return (
     <div className="bg-gray-50 min-h-screen py-12 animate-fade-in relative">
       <OTPModal isOpen={showOTP} onClose={() => setShowOTP(false)} targetValue={otpTarget} onVerify={handleVerifyOTP} />
+
+        {/* 🌟 NEW: Edit Contact Prompt Modal */}
+      {editContactModal.show && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl relative">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-lg font-serif">
+                          Update {editContactModal.type === 'phone' ? 'Phone Number' : 'Email Address'}
+                      </h3>
+                      <button onClick={() => setEditContactModal({ show: false, type: '', value: '' })} className="text-gray-400 hover:text-black">
+                          <X size={20} />
+                      </button>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-4">
+                      Enter your new {editContactModal.type} below. We will send a verification code to confirm it belongs to you.
+                  </p>
+                  <input
+                      type={editContactModal.type === 'email' ? 'email' : 'tel'}
+                      placeholder={`Enter new ${editContactModal.type}`}
+                      value={editContactModal.value}
+                      onChange={e => setEditContactModal({ ...editContactModal, value: e.target.value })}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:border-gold outline-none mb-6 bg-gray-50 focus:bg-white transition"
+                      autoFocus
+                  />
+                  <button
+                      onClick={() => triggerOTP(editContactModal.value)}
+                      disabled={!editContactModal.value}
+                      className="w-full bg-black text-gold font-bold py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-800 transition shadow-md"
+                  >
+                      Send Verification Code
+                  </button>
+              </div>
+          </div>
+      )}
 
       {/* 🌟 ENHANCED SIZER MODAL (Scrollable & Larger) */}
       {sizer.show && (
@@ -409,7 +463,15 @@ const Account = () => {
             <div className="relative group"><div className="w-24 h-24 bg-gold rounded-full flex items-center justify-center text-4xl text-black font-bold shadow-md border-4 border-white">{user?.name?.charAt(0).toUpperCase()}</div></div>
             <div>
               <div className="flex items-center gap-2"><h1 className="text-3xl font-serif font-bold text-gray-900">{user?.name}</h1><ShieldCheck size={20} className="text-blue-500" /></div>
-              <p className="text-gray-500 font-mono text-sm mt-1 flex items-center gap-3"><span>📱 {user?.phone} <button onClick={() => triggerOTP(user?.phone)} className="text-blue-500 text-xs hover:underline ml-1">Edit</button></span> • <span>✉️ {user?.email} <button onClick={() => triggerOTP(user?.email)} className="text-blue-500 text-xs hover:underline ml-1">Edit</button></span></p>
+              <p className="text-gray-500 font-mono text-sm mt-1 flex flex-wrap items-center gap-3">
+                  <span>📱 {user?.phone} 
+                      <button onClick={() => setEditContactModal({ show: true, type: 'phone', value: '' })} className="text-blue-500 text-xs hover:underline ml-1">Edit</button>
+                  </span> 
+                  • 
+                  <span>✉️ {user?.email || 'No email linked'} 
+                      <button onClick={() => setEditContactModal({ show: true, type: 'email', value: '' })} className="text-blue-500 text-xs hover:underline ml-1">Edit</button>
+                  </span>
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
