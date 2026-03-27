@@ -67,17 +67,13 @@ router.post('/', async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        // 🌟 ADDED gift_occasion and gift_effect to destructuring
         const { user_id, customer_name, phone_number, total_amount, address, city, pincode, payment_method, items, is_gift, gift_sender, gift_message, gift_occasion, gift_effect } = req.body;
-        // ---------------------------------------------------------
-        // 🛡️ SECURITY ENGINE: Deal Signature & Margin Check
-        // ---------------------------------------------------------
+        
         for (const item of items) {
             const dbItemRes = await pool.query('SELECT * FROM products WHERE id = $1', [item.id]);
             if (dbItemRes.rows.length === 0) throw new Error(`Product ${item.id} not found`);
             const dbItem = dbItemRes.rows[0];
 
-            // 1. Calculate Standard Official Price (Live Market)
             const retailRateRes = await pool.query('SELECT rate_per_gram FROM metal_rates WHERE metal_type = $1', [dbItem.metal_type]);
             const retailRate = retailRateRes.rows.length > 0 ? parseFloat(retailRateRes.rows[0].rate_per_gram) : 0;
             const retailMetalValue = parseFloat(dbItem.net_weight) * retailRate;
@@ -91,17 +87,16 @@ router.post('/', async (req, res) => {
             const gst = subtotal * 0.03;
             const standardListedPrice = Math.round(subtotal + gst);
 
-            // 2. Validate Deal Token
-            let validAuthorizedPrice = standardListedPrice; // Assume full price by default
-            let tokenAccepted = false; // 🌟 NEW FLAG: Tracks if we are honoring a locked deal
+            let validAuthorizedPrice = standardListedPrice; 
+            let tokenAccepted = false; 
             
             if (item.deal_token) {
                 try {
-                    const decoded = jwt.verify(item.deal_token, process.env.JWT_SECRET || 'aabarnam_secret_fallback');
-                    // 🛡️ SECURITY: Convert IDs to strings to prevent Type Mismatch
+                    // 🌟 REMOVED FALLBACK SECRET
+                    const decoded = jwt.verify(item.deal_token, process.env.JWT_SECRET);
                     if (String(decoded.productId) === String(item.id)) {
-                        validAuthorizedPrice = decoded.agreedPrice; // Token is valid!
-                        tokenAccepted = true; // Deal is valid, so we trust this price.
+                        validAuthorizedPrice = decoded.agreedPrice; 
+                        tokenAccepted = true; 
                     } else {
                         console.error(`🚨 Token ID Mismatch: Token has ${decoded.productId}, Cart has ${item.id}`);
                     }
@@ -110,18 +105,12 @@ router.post('/', async (req, res) => {
                 }
             }
 
-            // 3. Block "Inspect Element" Tampering
-            // The user cannot pay LESS than what was authorized (either full price or token price)
             const attemptedPrice = parseFloat(item.price_breakdown.final_total_price);
             if (attemptedPrice < validAuthorizedPrice) {
                 console.error(`🚨 HACK ATTEMPT DETECTED: Tried to buy at ₹${attemptedPrice}, but authorized price is ₹${validAuthorizedPrice}`);
                 throw new Error("SECURITY_VIOLATION");
             }
 
-            // 4. Absolute Safety Net (The "Live Floor" Check)
-            // 🌟 FIX: If 'tokenAccepted' is true, we SKIP this check. 
-            // Why? Because the token proves the price was safe *at the time of negotiation*.
-            // We shouldn't fail the order just because the market rate shifted 5 minutes later.
             if (!tokenAccepted) {
                 const isGold = dbItem.metal_type.includes('GOLD');
                 const rawMetalToFetch = isGold ? '24K_GOLD' : 'SILVER';
@@ -133,14 +122,12 @@ router.post('/', async (req, res) => {
                 const secureFloorPrice = Math.round(wholesaleCost * 1.03); 
 
                 if (attemptedPrice < secureFloorPrice) {
-                    // Only throw if they DON'T have a valid token AND are trying to go below cost
                     throw new Error("SECURITY_VIOLATION"); 
                 }
             }
         }
 
         let generatedOrderId; 
-        // 🌟 UPDATED INSERT TO INCLUDE gift_occasion and gift_effect
         const orderRes = await client.query(
             `INSERT INTO orders 
             (user_id, customer_name, phone_number, total_amount, status, address, city, pincode, payment_method, payment_status, is_gift, gift_sender, gift_message, gift_occasion, gift_effect) 
@@ -159,11 +146,23 @@ router.post('/', async (req, res) => {
                 [generatedOrderId, item.id, item.name, item.qty || 1, item.price_breakdown?.final_total_price, origPrice, discount, JSON.stringify(item.chat_transcript || [])]
             );
 
-            // FIX: Prevent negative stock race conditions
-            const stockCheck = await client.query(
-                'UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2 AND stock_quantity >= $1 RETURNING id', 
-                [item.qty || 1, item.id]
-            );
+            // 🌟 NEW: CONCURRENCY SAFE STOCK DEDUCTION
+            let stockCheck;
+            if (item.deal_token && tokenAccepted) {
+                // Claim reserved stock
+                stockCheck = await client.query(
+                    'UPDATE products SET stock_quantity = stock_quantity - $1, locked_stock = locked_stock - $1 WHERE id = $2 AND locked_stock >= $1 RETURNING id', 
+                    [item.qty || 1, item.id]
+                );
+                // Clear the temporary reservation
+                await client.query('DELETE FROM reserved_stock WHERE deal_token = $1', [item.deal_token]);
+            } else {
+                // Normal purchase: ensure stock isn't currently locked by an AI negotiation
+                stockCheck = await client.query(
+                    'UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2 AND (stock_quantity - locked_stock) >= $1 RETURNING id', 
+                    [item.qty || 1, item.id]
+                );
+            }
             
             if (stockCheck.rowCount === 0) {
                 throw new Error("OUT_OF_STOCK");

@@ -56,12 +56,9 @@ module.exports = (io, pool) => {
                 const subtotal = retailMetalValue + wastageValue + actualMakingCharge;
                 const gst = subtotal * 0.03;
                 
-                // Listed Price rounded to the nearest 50
                 const listedPrice = Math.round((subtotal + gst) / 50) * 50;
 
-                // 🌟 THE FIX: Floor Price Safety bounds
                 let absoluteMinimum = Math.ceil((wholesaleCost * 1.03) / 50) * 50; 
-                // If the math anomaly causes absolute minimum to be higher than listed, force a standard 5% discount limit
                 if (absoluteMinimum >= listedPrice) {
                     absoluteMinimum = listedPrice - (Math.round((listedPrice * 0.05) / 50) * 50);
                 }
@@ -130,7 +127,7 @@ STRICT RULES:
             socket.emit('ai_typing', true);
             try {
                 const result = await sessionData.chatSession.sendMessage(text);
-                handleAiResponse(result, socket, sessionData);
+                await handleAiResponse(result, socket, sessionData); // 🌟 ADDED AWAIT
             } catch (err) {
                 socket.emit('ai_typing', false);
                 socket.emit('system_message', { text: "Forgive me, I need a moment to calculate. Could you repeat that?" });
@@ -142,7 +139,7 @@ STRICT RULES:
             socket.emit('ai_typing', true);
             try {
                 const result = await sessionData.chatSession.sendMessage("SYSTEM NOTE: The user is hesitating. Proactively offer a very small discount.");
-                handleAiResponse(result, socket, sessionData);
+                await handleAiResponse(result, socket, sessionData); // 🌟 ADDED AWAIT
             } catch (err) { socket.emit('ai_typing', false); }
         });
 
@@ -151,12 +148,13 @@ STRICT RULES:
             socket.emit('ai_typing', true);
             try {
                 const result = await sessionData.chatSession.sendMessage("SYSTEM NOTE: The user is leaving! Make a 'wait, don't go' counter-offer right now.");
-                handleAiResponse(result, socket, sessionData);
+                await handleAiResponse(result, socket, sessionData); // 🌟 ADDED AWAIT
             } catch (err) { socket.emit('ai_typing', false); }
         });
     });
 
-    function handleAiResponse(result, socket, sessionData) {
+    // 🌟 MADE ASYNC to handle database locking
+    async function handleAiResponse(result, socket, sessionData) {
         socket.emit('ai_typing', false);
         const functionCalls = result.response.functionCalls();
 
@@ -175,11 +173,33 @@ STRICT RULES:
             let dealToken = null;
             if (aiDecision.status === 'accepted') {
                 sessionData.isDealClosed = true;
+                
+                // 🌟 REMOVED FALLBACK & SET TO 30 MINUTES
                 dealToken = jwt.sign(
                     { productId: sessionData.productId, agreedPrice: finalPrice },
-                    process.env.JWT_SECRET || 'aabarnam_secret_fallback',
-                    { expiresIn: '1h' } 
+                    process.env.JWT_SECRET,
+                    { expiresIn: '30m' } 
                 );
+
+                // 🌟 NEW: PHYSICALLY LOCK THE STOCK
+                try {
+                    const lockRes = await pool.query(
+                        'UPDATE products SET locked_stock = locked_stock + 1 WHERE id = $1 AND (stock_quantity - locked_stock) >= 1 RETURNING id',
+                        [sessionData.productId]
+                    );
+
+                    if (lockRes.rowCount === 0) {
+                        socket.emit('system_message', { text: "I apologize deeply! Another customer just purchased our last piece while we were negotiating. I cannot finalize this deal." });
+                        return; // Abort if out of stock
+                    }
+
+                    await pool.query(
+                        "INSERT INTO reserved_stock (product_id, deal_token, qty, expires_at) VALUES ($1, $2, 1, NOW() + INTERVAL '30 minutes')",
+                        [sessionData.productId, dealToken]
+                    );
+                } catch (err) {
+                    console.error("Critical error locking stock:", err);
+                }
             }
 
             const newSubtotal = finalPrice / 1.03;

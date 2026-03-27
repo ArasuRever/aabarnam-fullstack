@@ -5,7 +5,8 @@ import axios from 'axios';
 import { 
   Package, LogOut, MapPin, Plus, Trash2, Heart, Edit2, X, 
   Ruler, Calendar, ShieldCheck, Save, Users, Gift, Bot, Timer, AlertTriangle, 
-  CreditCard as CreditCardIcon, Scan, CircleDashed, Info
+  CreditCard as CreditCardIcon, Scan, CircleDashed, Info,
+  ChevronDown, ChevronUp, Truck, CheckCircle, Clock, XCircle, FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import OTPModal from '../components/OTPModal';
@@ -43,7 +44,10 @@ const Account = () => {
 
   const [sizer, setSizer] = useState({ show: false, step: 1, type: 'ring', cardPx: 280, circlePx: 120 });
 
-  // 🌟 NEW: Lock background scrolling when ANY modal is open
+  // 🌟 NEW: Track which order is currently expanded in the Accordion
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
+
+  // Lock background scrolling when ANY modal is open
   useEffect(() => {
     if (sizer.show || cancelModal.show || editAddressModal.show || editGiftModal.show || showOTP) {
         document.body.style.overflow = 'hidden';
@@ -162,6 +166,80 @@ const Account = () => {
       } catch (err) { toast.error(err.response?.data?.error || "Failed to update gift options."); }
   };
 
+  // --- NEW ACCORDION & TIMELINE HELPER FUNCTIONS ---
+  const toggleOrderExpansion = (orderId) => {
+    setExpandedOrderId(prev => prev === orderId ? null : orderId);
+  };
+
+  const getStatusColor = (status) => {
+      switch(status) {
+          case 'PENDING': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+          case 'PROCESSING': return 'bg-blue-100 text-blue-800 border-blue-200';
+          case 'SHIPPED': return 'bg-purple-100 text-purple-800 border-purple-200';
+          case 'DELIVERED': return 'bg-green-100 text-green-800 border-green-200';
+          case 'CANCELLED': return 'bg-red-100 text-red-800 border-red-200';
+          case 'RETURNED': return 'bg-orange-100 text-orange-800 border-orange-200';
+          default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      }
+  };
+
+  const getPaymentColor = (status) => {
+      switch(status) {
+          case 'PAID': return 'text-green-600 bg-green-50';
+          case 'PENDING': return 'text-yellow-600 bg-yellow-50';
+          case 'REFUNDED': return 'text-gray-600 bg-gray-100';
+          case 'FAILED': return 'text-red-600 bg-red-50';
+          default: return 'text-gray-600 bg-gray-50';
+      }
+  };
+
+  const renderOrderTimeline = (status) => {
+      const steps = ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED'];
+      let currentIndex = steps.indexOf(status);
+      
+      if (status === 'CANCELLED') {
+          return (
+              <div className="flex items-center gap-3 text-red-600 font-bold bg-red-50 p-3 rounded-lg border border-red-100 mb-4">
+                  <XCircle size={20} /> Order Cancelled
+              </div>
+          );
+      }
+      
+      if (status === 'RETURNED') {
+          return (
+              <div className="flex items-center gap-3 text-orange-600 font-bold bg-orange-50 p-3 rounded-lg border border-orange-100 mb-4">
+                  <AlertTriangle size={20} /> Order Returned
+              </div>
+          );
+      }
+
+      return (
+          <div className="relative flex justify-between items-center mb-6 pt-2">
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-gray-200 -z-10 rounded-full"></div>
+              <div className={`absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-gold -z-10 rounded-full transition-all duration-500`} style={{ width: `${(Math.max(0, currentIndex) / (steps.length - 1)) * 100}%` }}></div>
+              
+              {steps.map((step, idx) => {
+                  const isCompleted = currentIndex >= idx;
+                  const isCurrent = currentIndex === idx;
+                  let Icon = Clock;
+                  if (step === 'SHIPPED') Icon = Truck;
+                  if (step === 'DELIVERED') Icon = CheckCircle;
+                  if (step === 'PROCESSING') Icon = Package;
+
+                  return (
+                      <div key={step} className="flex flex-col items-center">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-colors ${isCompleted ? 'bg-gold border-gold text-white' : 'bg-white border-gray-300 text-gray-400'} ${isCurrent ? 'shadow-[0_0_10px_rgba(212,175,55,0.5)] scale-110' : ''}`}>
+                              <Icon size={14} />
+                          </div>
+                          <span className={`text-[10px] font-bold mt-2 tracking-wider ${isCompleted ? 'text-gray-900' : 'text-gray-400'}`}>{step}</span>
+                      </div>
+                  );
+              })}
+          </div>
+      );
+  };
+  // ----------------------------------------------
+
   // 🌟 REFINED MATH: Indian Standard Size = Circumference - 40
   const pxPerMm = sizer.cardPx / 85.6; 
   const currentMm = sizer.circlePx / pxPerMm;
@@ -267,7 +345,7 @@ const Account = () => {
           </div>
       )}
 
-      {/* Cancel Order Modal (Scroll-safe) */}
+      {/* Cancel Order Modal */}
       {cancelModal.show && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
               <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -283,7 +361,7 @@ const Account = () => {
           </div>
       )}
 
-      {/* Edit Address Modal (Scroll-safe) */}
+      {/* Edit Address Modal */}
       {editAddressModal.show && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
               <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -301,7 +379,7 @@ const Account = () => {
           </div>
       )}
 
-      {/* Edit Gift Modal (Scroll-safe) */}
+      {/* Edit Gift Modal */}
       {editGiftModal.show && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
               <div className="bg-white rounded-xl max-w-md w-full p-6 animate-fade-in-up shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -412,34 +490,185 @@ const Account = () => {
               </div>
             </div>
 
+            {/* 🌟 NEW ACCORDION PURCHASE HISTORY */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between"><div className="flex items-center gap-3"><Package className="text-gold" /><h2 className="text-xl font-bold text-gray-900">Purchase History</h2></div><span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full">{orders.length} Orders</span></div>
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                      <Package className="text-gold" />
+                      <h2 className="text-xl font-bold text-gray-900">Purchase History</h2>
+                  </div>
+                  <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full">{orders.length} Orders</span>
+              </div>
+              
               {loading ? (
                 <div className="p-16 flex justify-center"><div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin"></div></div>
               ) : orders.length === 0 ? (
-                <div className="p-16 text-center"><Package size={48} className="text-gray-200 mx-auto mb-4" /><p className="text-gray-500 mb-6 text-lg">You haven't placed any orders yet.</p><Link to="/collections/all" className="bg-black text-gold px-8 py-3 rounded-full font-bold hover:bg-gray-800 transition">Start Exploring</Link></div>
-              ) : orders.map(order => (
-                <div key={order.id} className="p-6 border-b last:border-0 hover:bg-gray-50/50 transition">
-                  <div className="flex flex-col md:flex-row justify-between md:items-start mb-5 gap-4">
-                    <div>
-                      <div className="flex items-center gap-3 mb-1"><p className="font-bold text-gray-900">Order #{order.id}</p><span className={`text-[10px] font-bold px-2.5 py-1 rounded-sm uppercase tracking-wider ${order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>{order.status}</span></div>
-                      <p className="text-xs text-gray-500">Placed on {new Date(order.created_at).toLocaleDateString()}</p>
-                    </div>
-                    <div className="text-right"><p className="font-bold text-2xl text-gray-900 tracking-tight">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p></div>
-                  </div>
-                  <div className="bg-white rounded-xl p-4 border border-gray-100">
-                    <div className="space-y-2">{order.items.map((item, idx) => (<div key={idx} className="flex justify-between items-center text-sm"><span className="font-medium text-gray-800">{item.quantity}x {item.product_name}</span><span className="text-gray-500 font-medium">₹{parseFloat(item.price).toLocaleString('en-IN')}</span></div>))}</div>
-                  </div>
-                  {(order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED') && (
-                      <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-100">
-                         <button onClick={() => setEditAddressModal({ show: true, order, form: { address: order.address, city: order.city, pincode: order.pincode, phone_number: order.phone_number }})} className="text-xs font-bold text-gray-600 bg-gray-100 px-3 py-2 rounded-md hover:bg-gray-200 transition">Change Address</button>
-                         {order.is_gift && (<button onClick={() => setEditGiftModal({ show: true, order, form: { gift_sender: order.gift_sender, gift_message: order.gift_message, gift_occasion: order.gift_occasion, gift_effect: order.gift_effect }})} className="text-xs font-bold text-gold-dark bg-gold/10 px-3 py-2 rounded-md hover:bg-gold/20 transition">Edit Gift Options</button>)}
-                         <button onClick={() => setCancelModal({ show: true, order })} className="text-xs font-bold text-red-600 ml-auto hover:underline">Cancel Order</button>
-                      </div>
-                  )}
+                <div className="p-16 text-center">
+                    <Package size={48} className="text-gray-200 mx-auto mb-4" />
+                    <p className="text-gray-500 mb-6 text-lg">You haven't placed any orders yet.</p>
+                    <Link to="/collections/all" className="bg-black text-gold px-8 py-3 rounded-full font-bold hover:bg-gray-800 transition">Start Exploring</Link>
                 </div>
-              ))}
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {orders.map(order => {
+                    const isExpanded = expandedOrderId === order.id;
+
+                    return (
+                      <div key={order.id} className="transition-all duration-300">
+                        {/* Summary Header (Clickable) */}
+                        <div 
+                           onClick={() => toggleOrderExpansion(order.id)}
+                           className={`p-6 cursor-pointer transition-colors ${isExpanded ? 'bg-gray-50/50' : 'hover:bg-gray-50/50'}`}
+                        >
+                            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-1">
+                                        <p className="font-bold text-gray-900 text-lg">Order #{order.id}</p>
+                                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md border uppercase tracking-wider ${getStatusColor(order.status)}`}>
+                                            {order.status}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-mono">Placed on {new Date(order.created_at).toLocaleString()}</p>
+                                </div>
+                                
+                                <div className="flex items-center justify-between md:justify-end gap-6">
+                                    <div className="text-left md:text-right">
+                                        <p className="font-bold text-xl text-gray-900 tracking-tight">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${getPaymentColor(order.payment_status)}`}>
+                                            Payment: {order.payment_status}
+                                        </span>
+                                    </div>
+                                    <div className="text-gray-400 bg-white border shadow-sm p-1 rounded-full">
+                                        {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Expanded Details Section */}
+                        {isExpanded && (
+                          <div className="px-6 pb-6 bg-gray-50/30 animate-fade-in">
+                              
+                              {/* Timeline Tracker */}
+                              <div className="py-4 mb-4 border-b border-gray-100">
+                                  {renderOrderTimeline(order.status)}
+                              </div>
+
+                              {/* Order Alert (Cancellations) */}
+                              {order.status === 'CANCELLED' && order.cancel_reason && (
+                                  <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-sm text-red-800 flex items-start gap-3">
+                                      <Info size={18} className="mt-0.5 flex-shrink-0" />
+                                      <div>
+                                          <p className="font-bold mb-1">Cancellation Details</p>
+                                          <p><strong>Initiated by:</strong> {order.cancelled_by === 'CUSTOMER' ? 'You' : 'Aabarnam Support'}</p>
+                                          <p><strong>Reason:</strong> {order.cancel_reason}</p>
+                                          {order.payment_status === 'PAID' && <p className="mt-1 font-bold">Your refund is being processed.</p>}
+                                      </div>
+                                  </div>
+                              )}
+
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                  {/* Items List */}
+                                  <div className="lg:col-span-2 space-y-3">
+                                      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Order Items</h4>
+                                      {order.items.map((item, idx) => (
+                                          <div key={idx} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex items-center justify-between">
+                                              <div className="flex items-center gap-4">
+                                                  <div className="w-10 h-10 bg-gray-50 rounded flex items-center justify-center font-bold text-gray-500 border border-gray-200">
+                                                      {item.quantity}x
+                                                  </div>
+                                                  <div>
+                                                      <p className="font-bold text-sm text-gray-900">{item.product_name}</p>
+                                                      {item.discount > 0 && (
+                                                          <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">
+                                                              AI Discount: -₹{parseFloat(item.discount).toLocaleString('en-IN')}
+                                                          </span>
+                                                      )}
+                                                  </div>
+                                              </div>
+                                              <p className="font-bold text-gray-900">₹{parseFloat(item.price).toLocaleString('en-IN')}</p>
+                                          </div>
+                                      ))}
+                                  </div>
+
+                                  {/* Shipping & Details */}
+                                  <div className="space-y-6">
+                                      <div>
+                                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-1"><MapPin size={14}/> Shipping Info</h4>
+                                          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-sm text-gray-600">
+                                              <p className="font-bold text-gray-900 mb-1">{order.customer_name}</p>
+                                              <p>{order.address}</p>
+                                              <p>{order.city} - {order.pincode}</p>
+                                              <p className="mt-2 font-mono text-xs">Ph: {order.phone_number}</p>
+                                          </div>
+                                      </div>
+                                      
+                                      {order.is_gift && (
+                                          <div>
+                                              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-1"><Gift size={14}/> Gift Details</h4>
+                                              <div className="bg-gold/5 rounded-xl p-4 border border-gold/20 shadow-sm text-sm text-gray-800">
+                                                  <p><strong>Occasion:</strong> {order.gift_occasion || 'Special Gift'}</p>
+                                                  <p><strong>From:</strong> {order.gift_sender}</p>
+                                                  <p className="mt-2 italic text-xs text-gray-600 line-clamp-2">"{order.gift_message}"</p>
+                                              </div>
+                                          </div>
+                                      )}
+
+                                      <div>
+                                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-1"><CreditCardIcon size={14}/> Payment Info</h4>
+                                          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-sm text-gray-600">
+                                              <p><strong>Method:</strong> {order.payment_method}</p>
+                                              <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
+                                                  <span>Total</span>
+                                                  <span className="font-bold text-gold-dark">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</span>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              </div>
+
+                              {/* Action Bar */}
+                              {(order.status !== 'SHIPPED' && order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED') && (
+                                  <div className="mt-6 pt-4 border-t border-gray-200 flex flex-wrap gap-3">
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); setEditAddressModal({ show: true, order, form: { address: order.address, city: order.city, pincode: order.pincode, phone_number: order.phone_number }}); }} 
+                                        className="text-xs font-bold text-gray-700 bg-white border border-gray-300 px-4 py-2.5 rounded-lg hover:bg-gray-50 transition shadow-sm"
+                                      >
+                                          Change Shipping Address
+                                      </button>
+                                      {order.is_gift && (
+                                          <button 
+                                            onClick={(e) => { e.stopPropagation(); setEditGiftModal({ show: true, order, form: { gift_sender: order.gift_sender, gift_message: order.gift_message, gift_occasion: order.gift_occasion, gift_effect: order.gift_effect }}); }} 
+                                            className="text-xs font-bold text-gold-dark bg-gold/10 border border-gold/30 px-4 py-2.5 rounded-lg hover:bg-gold/20 transition shadow-sm"
+                                          >
+                                              Edit Digital Gift Note
+                                          </button>
+                                      )}
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); setCancelModal({ show: true, order }); }} 
+                                        className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-4 py-2.5 rounded-lg ml-auto hover:bg-red-100 transition shadow-sm"
+                                      >
+                                          Cancel Order
+                                      </button>
+                                  </div>
+                              )}
+                              
+                              {order.payment_status === 'PAID' && order.status !== 'CANCELLED' && (
+                                  <div className="mt-6 pt-4 border-t border-gray-200 flex justify-end">
+                                      <button className="text-xs font-bold text-gray-600 hover:text-black flex items-center gap-1.5 transition">
+                                          <FileText size={16} /> Download Tax Invoice
+                                      </button>
+                                  </div>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
+
           </div>
         </div>
       </div>

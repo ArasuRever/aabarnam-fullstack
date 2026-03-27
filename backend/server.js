@@ -1,27 +1,25 @@
 const express = require('express');
-const http = require('http'); // NEW: Required for Socket.io
-const { Server } = require('socket.io'); // NEW: Socket.io Server
+const http = require('http'); 
+const { Server } = require('socket.io'); 
 const { Pool } = require('pg');
 const cors = require('cors');
+const cron = require('node-cron'); // 🌟 NEW: Cron Job for Cart Abandonment
 require('dotenv').config();
 
 const app = express();
-const server = http.createServer(app); // NEW: Wrap Express in HTTP server
+const server = http.createServer(app); 
 
 const io = new Server(server, {
     cors: {
-        // Allows both the Admin app and Client app to connect!
         origin: ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"], 
         methods: ["GET", "POST"]
     }
 });
 
-// Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// PostgreSQL Connection
 const pool = new Pool({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
@@ -55,16 +53,45 @@ app.use('/api/users', usersRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/otp', otpRoutes);
 
-// NEW: Initialize the WebSocket Negotiator logic
 const negotiatorSockets = require('./sockets/negotiator');
 negotiatorSockets(io, pool);
+
+// 🌟 NEW: THE CART SWEEPER
+// Runs every 2 minutes to check for abandoned AI negotiations and free up stock
+cron.schedule('*/2 * * * *', async () => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Find all locks where 30 minutes have passed
+        const expiredRes = await client.query('SELECT * FROM reserved_stock WHERE expires_at < NOW()');
+        
+        if (expiredRes.rows.length > 0) {
+            for (const row of expiredRes.rows) {
+                // Free the stock back to the public pool
+                await client.query('UPDATE products SET locked_stock = locked_stock - $1 WHERE id = $2 AND locked_stock >= $1', [row.qty, row.product_id]);
+                
+                // Delete the expired lock record
+                await client.query('DELETE FROM reserved_stock WHERE id = $1', [row.id]);
+                
+                console.log(`[SYSTEM] Released abandoned cart lock for Product ID: ${row.product_id}`);
+            }
+        }
+        
+        await client.query('COMMIT');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('[SYSTEM] Failed to clear expired stock:', error);
+    } finally {
+        client.release();
+    }
+});
 
 app.get('/', (req, res) => {
     res.send('Aabarnam Backend API with WebSockets is running!');
 });
 
 const PORT = process.env.PORT || 5000;
-// NEW: Listen on the 'server' instead of 'app'
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT} 🚀`);
 });
