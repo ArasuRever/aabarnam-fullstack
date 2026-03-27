@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-// 🌟 Added AlertTriangle for the Warning Banner
-import { Package, Truck, CheckCircle, Clock, Search, MapPin, Phone, Banknote, XCircle, AlertTriangle } from 'lucide-react';
+// 🌟 Added Gift and Scan icons
+import { Package, Truck, CheckCircle, Clock, Search, MapPin, Phone, Banknote, XCircle, AlertTriangle, Gift, Scan } from 'lucide-react';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -52,11 +52,10 @@ const Orders = () => {
     } catch (error) { alert('Failed to update payment status'); }
   };
 
-  // 🌟 NEW: Acknowledge Notification
   const clearNotification = async (id) => {
     try {
         await axios.put(`http://localhost:5000/api/orders/${id}/clear-notification`);
-        fetchOrders(); // Refresh the list to remove the banner
+        fetchOrders(); 
     } catch (e) { alert('Failed to clear notification'); }
   };
 
@@ -132,7 +131,6 @@ const Orders = () => {
         {filteredOrders.map(order => (
           <div key={order.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden transition-all ${order.has_user_updates ? 'border-red-300 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'border-gray-100'}`}>
              
-             {/* 🌟 NEW: NOTIFICATION BANNER */}
              {order.has_user_updates && (
                  <div className="bg-red-50 px-6 py-3 flex flex-wrap justify-between items-center gap-4 border-b border-red-200 animate-pulse">
                      <div className="flex items-center gap-2 text-red-700">
@@ -229,6 +227,47 @@ const Orders = () => {
                     </div>
                 </div>
              </div>
+
+             {/* 🌟 NEW: ADMIN GIFT VISIBILITY PANEL */}
+             {order.is_gift && (
+                 <div className="mx-6 mb-6 bg-gold/10 border border-gold/30 rounded-xl p-4 shadow-inner">
+                     <div className="flex justify-between items-start mb-3">
+                         <h4 className="text-sm font-bold text-gold-dark flex items-center gap-2">
+                             <Gift size={18} /> Digital Gift Order
+                         </h4>
+                         <button 
+                             onClick={() => window.open(`http://localhost:5173/gift/${order.id}`, '_blank')} 
+                             className="text-xs font-bold bg-white border border-gold text-gold-dark px-3 py-1 rounded hover:bg-gold hover:text-black transition flex items-center gap-1 shadow-sm"
+                         >
+                             <Scan size={12} /> Test Reveal Page
+                         </button>
+                     </div>
+                     
+                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm bg-white p-3 rounded-lg border border-gold/20">
+                         <div>
+                             <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider">Occasion</span>
+                             <span className="font-bold text-gray-900">{order.gift_occasion || 'N/A'}</span>
+                         </div>
+                         <div>
+                             <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider">Sender Name</span>
+                             <span className="font-bold text-gray-900">{order.gift_sender || 'N/A'}</span>
+                         </div>
+                         <div>
+                             <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider">Animation</span>
+                             <span className="font-bold text-gray-900 capitalize">{order.gift_effect || 'Default'}</span>
+                         </div>
+                         <div className="col-span-2 md:col-span-1">
+                             <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider">Message</span>
+                             <span className="italic text-gray-700 text-xs line-clamp-2" title={order.gift_message}>"{order.gift_message || 'N/A'}"</span>
+                         </div>
+                     </div>
+                     
+                     <p className="text-xs text-red-600 font-bold mt-3 flex items-center gap-1">
+                         <AlertTriangle size={14} /> 
+                         Packaging Team: Include the "Aura Digital Gift" QR Code Card in this shipment!
+                     </p>
+                 </div>
+             )}
 
              <div className="bg-white px-6 py-4 border-t border-gray-100">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Order Items</h4>

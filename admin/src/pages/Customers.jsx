@@ -7,6 +7,10 @@ const Customers = () => {
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null); 
 
+  // 🌟 NEW: States for deep CRM data
+  const [customerRelations, setCustomerRelations] = useState([]);
+  const [customerAddresses, setCustomerAddresses] = useState([]);
+
   useEffect(() => { fetchCustomers(); }, []);
 
   const fetchCustomers = async () => {
@@ -19,8 +23,15 @@ const Customers = () => {
 
   const viewCustomerDetails = async (id) => {
     try {
-      const res = await axios.get(`http://localhost:5000/api/users/${id}`);
-      setSelectedUser(res.data);
+      // 🌟 NEW: Fetching all relevant data concurrently
+      const [userRes, relRes, addrRes] = await Promise.all([
+          axios.get(`http://localhost:5000/api/users/${id}`),
+          axios.get(`http://localhost:5000/api/users/${id}/relations`),
+          axios.get(`http://localhost:5000/api/auth/addresses/${id}`)
+      ]);
+      setSelectedUser(userRes.data);
+      setCustomerRelations(relRes.data);
+      setCustomerAddresses(addrRes.data);
     } catch (err) { alert("Failed to fetch user details"); }
   };
 
@@ -59,7 +70,6 @@ const Customers = () => {
                                    <div><p className="font-bold text-gray-800">Order #{order.id}</p><p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString()}</p></div>
                                    <div className="text-right"><p className="font-bold text-gray-900">₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</p><p className={`text-[10px] font-bold ${order.status === 'DELIVERED' ? 'text-green-600' : 'text-blue-600'}`}>{order.status}</p></div>
                                 </div>
-                                {/* UPGRADED: Items List with AI Deal Badges */}
                                 <div className="space-y-1">
                                     {order.items.map((item, idx) => (
                                         <div key={idx} className="flex justify-between items-center py-1">
@@ -95,20 +105,47 @@ const Customers = () => {
                     )}
                  </div>
 
+                 {/* 🌟 NEW: CRM DATA - FAMILY VAULT */}
                  <div>
-                    <h4 className="font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2"><MapPin size={16}/> Saved Addresses</h4>
-                    {selectedUser.addresses.length === 0 ? <p className="text-sm text-gray-400">No addresses saved.</p> : (
-                       <div className="space-y-3">
-                          {selectedUser.addresses.map(addr => (
-                             <div key={addr.id} className="bg-white border border-gray-200 p-3 rounded-lg text-sm relative">
-                                {addr.is_default && <span className="absolute top-2 right-2 text-[10px] bg-gold px-2 py-0.5 rounded font-bold">DEFAULT</span>}
-                                <p className="font-bold text-gray-800">{addr.full_name}</p>
-                                <p className="text-xs text-gray-600 mt-1">{addr.address}, {addr.city} - {addr.pincode}</p>
-                             </div>
-                          ))}
-                       </div>
+                    <h4 className="font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2">
+                        <Users size={16} className="text-gold" /> Family Vault (Relations)
+                    </h4>
+                    {customerRelations.length === 0 ? (
+                        <p className="text-xs text-gray-500 italic">No family members added yet.</p>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {customerRelations.map(rel => (
+                                <div key={rel.id} className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                    <p className="font-bold text-sm text-gray-800">{rel.name} <span className="bg-white border text-[10px] px-1.5 py-0.5 rounded ml-1 text-gray-500">{rel.relationship}</span></p>
+                                    <p className="text-xs text-gray-600 mt-1">DOB: {rel.dob ? new Date(rel.dob).toLocaleDateString() : 'Unknown'}</p>
+                                    <p className="text-xs text-gray-600 mt-0.5">Sizes: Ring {rel.ring_size || '-'} | Bangle {rel.bangle_size || '-'}</p>
+                                </div>
+                            ))}
+                        </div>
                     )}
                  </div>
+
+                 {/* 🌟 NEW: CRM DATA - ADDRESSES */}
+                 <div className="pb-6">
+                    <h4 className="font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2">
+                        <MapPin size={16} className="text-gold" /> Saved Addresses
+                    </h4>
+                    {customerAddresses.length === 0 ? (
+                        <p className="text-xs text-gray-500 italic">No addresses saved.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {customerAddresses.map(addr => (
+                                <div key={addr.id} className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 relative">
+                                    {addr.is_default && <span className="absolute top-3 right-3 text-[10px] bg-gold px-2 py-0.5 rounded font-bold text-black">DEFAULT</span>}
+                                    <p className="font-bold text-gray-900 mb-1">{addr.full_name} <span className="text-gray-500 font-normal ml-1">({addr.phone})</span></p>
+                                    <p>{addr.address}</p>
+                                    <p>{addr.city} - {addr.pincode}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                 </div>
+
               </div>
            </div>
         </div>
